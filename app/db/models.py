@@ -60,6 +60,7 @@ class User(SQLModel, table=True):
     full_name: Optional[str] = Field(default=None, max_length=255)
     is_active: bool = Field(default=True)
     is_superuser: bool = Field(default=False)
+    is_verified: bool = Field(default=False)  # Required by FastAPI Users
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
