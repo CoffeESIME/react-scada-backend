@@ -1,233 +1,146 @@
-"""
-Definición de Tablas de la Base de Datos.
-Usando SQLModel (SQLAlchemy + Pydantic).
-"""
 from datetime import datetime
 from enum import Enum
-from typing import Optional, List, Any
-from uuid import UUID, uuid4
-
+from typing import Optional, List, Dict, Any
 from sqlmodel import SQLModel, Field, Relationship, Column
-from sqlalchemy import JSON, Text
+from sqlalchemy import JSON, PrimaryKeyConstraint
+from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
+from fastapi_users.db import SQLAlchemyBaseUserTable
 
+# ============ Enums (Mantenemos los tuyos, son buenos) ============
 
-# ============ Enums ============
+class AlarmSeverity(int, Enum):
+    """Usamos Int para poder ordenar por gravedad (3 > 1)"""
+    INFO = 1
+    WARNING = 2
+    CRITICAL = 3
 
-class AlarmSeverity(str, Enum):
-    """Niveles de severidad de alarmas."""
-    INFO = "info"
-    WARNING = "warning"
-    CRITICAL = "critical"
-
-
-class AlarmStatus(str, Enum):
-    """Estado de una alarma."""
-    ACTIVE = "active"
-    ACKNOWLEDGED = "acknowledged"
-    RESOLVED = "resolved"
-
-
-class TagDataType(str, Enum):
-    """Tipos de datos soportados para tags."""
-    BOOLEAN = "boolean"
-    INTEGER = "integer"
-    FLOAT = "float"
-    STRING = "string"
-
-
-class NodeType(str, Enum):
-    """Tipos de nodos SCADA disponibles."""
-    MOTOR = "motor"
-    VALVE = "valve"
-    TANK = "tank"
-    GAUGE = "gauge"
-    PUMP = "pump"
-    SENSOR = "sensor"
-    PLC = "plc"
-    LABEL = "label"
-
+class ProtocolType(str, Enum):
+    MODBUS = "modbus"
+    OPCUA = "opcua"
+    MQTT = "mqtt"
+    SIMULATED = "simulated"
 
 # ============ User Model ============
 
 class User(SQLModel, table=True):
-    """Modelo de Usuario para autenticación."""
-    
     __tablename__ = "users"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    email: str = Field(unique=True, index=True, max_length=255)
-    hashed_password: str = Field(max_length=255)
-    full_name: Optional[str] = Field(default=None, max_length=255)
+    
+    # --- FastAPI Users Required Fields ---
+    email: str = Field(unique=True, index=True, max_length=320)
+    hashed_password: str = Field(max_length=1024)
     is_active: bool = Field(default=True)
     is_superuser: bool = Field(default=False)
-    is_verified: bool = Field(default=False)  # Required by FastAPI Users
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-
+    is_verified: bool = Field(default=False)
+    
+    # --- Custom Fields ---
+    username: str = Field(unique=True, index=True)
+    role: str = Field(default="OPERATOR") # ADMIN, OPERATOR
+    full_name: Optional[str] = None
 
 # ============ SCADA Core Models ============
 
 class Tag(SQLModel, table=True):
     """
-    Tag SCADA: representa un punto de datos del proceso.
-    Puede estar asociado a un dispositivo Modbus, OPC-UA, o MQTT.
+    Catálogo maestro de variables.
+    Soporta el patrón 'Protocol Factory' mediante 'connection_config'.
     """
-    
     __tablename__ = "tags"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(index=True, max_length=100)  # Ej: "motor_01_speed"
-    description: Optional[str] = Field(default=None, max_length=500)
-    data_type: TagDataType = Field(default=TagDataType.FLOAT)
-    unit: Optional[str] = Field(default=None, max_length=50)  # Ej: "RPM", "°C", "PSI"
+    name: str = Field(unique=True, index=True) # Ej: "Tanque1_Nivel"
+    description: Optional[str] = None
+    unit: Optional[str] = None
     
-    # Límites para alarmas
-    low_limit: Optional[float] = Field(default=None)
-    high_limit: Optional[float] = Field(default=None)
-    low_low_limit: Optional[float] = Field(default=None)
-    high_high_limit: Optional[float] = Field(default=None)
+    # --- Configuración del Protocol Factory ---
+    source_protocol: ProtocolType = Field(default=ProtocolType.SIMULATED)
     
-    # Origen del dato
-    source_type: str = Field(default="mqtt", max_length=50)  # mqtt, modbus, opcua
-    source_address: Optional[str] = Field(default=None, max_length=255)  # Topic o dirección
+    # Guardamos la config compleja (IP, Reg, NodeID) en JSON
+    connection_config: Dict = Field(default={}, sa_column=Column(JSONB)) 
     
-    # Valor actual (cache)
-    current_value: Optional[str] = Field(default=None)
-    last_updated: Optional[datetime] = Field(default=None)
+    scan_rate_ms: int = Field(default=1000) # Frecuencia de lectura
+    mqtt_topic: str # Topic normalizado: "scada/tags/tanque1"
+    
+    is_enabled: bool = Field(default=True)
     
     # Relaciones
     metrics: List["Metric"] = Relationship(back_populates="tag")
-    alarms: List["Alarm"] = Relationship(back_populates="tag")
-    
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    alarm_definition: Optional["AlarmDefinition"] = Relationship(back_populates="tag")
 
 
 class Metric(SQLModel, table=True):
     """
-    Métrica histórica: valor de un tag en un momento específico.
-    Esta tabla será convertida a Hypertable en TimescaleDB.
+    Hypertable de TimescaleDB.
+    NOTA: No tiene ID único tradicional. Su PK es compuesta (time + tag_id).
     """
-    
     __tablename__ = "metrics"
+    __table_args__ = (
+        PrimaryKeyConstraint("time", "tag_id"),
+    )
     
-    id: Optional[int] = Field(default=None, primary_key=True)
-    tag_id: int = Field(foreign_key="tags.id", index=True)
-    value: float = Field(...)
-    timestamp: datetime = Field(default_factory=datetime.utcnow, index=True)
-    quality: int = Field(default=192)  # OPC-UA quality code (192 = Good)
-    
-    # Relación
+    time: datetime = Field(
+        sa_column=Column(TIMESTAMP(timezone=True), default=datetime.utcnow)
+    )
+    tag_id: int = Field(foreign_key="tags.id")
+    value: float
+    quality: int = Field(default=192) # OPC UA Good
+
     tag: Optional[Tag] = Relationship(back_populates="metrics")
 
 
-class Alarm(SQLModel, table=True):
-    """
-    Alarma del sistema SCADA.
-    Se genera cuando un tag cruza sus límites configurados.
-    """
-    
-    __tablename__ = "alarms"
-    
-    id: Optional[int] = Field(default=None, primary_key=True)
-    tag_id: Optional[int] = Field(default=None, foreign_key="tags.id", index=True)
-    
-    severity: AlarmSeverity = Field(default=AlarmSeverity.WARNING)
-    status: AlarmStatus = Field(default=AlarmStatus.ACTIVE)
-    message: str = Field(max_length=500)
-    
-    triggered_value: Optional[float] = Field(default=None)
-    trigger_condition: Optional[str] = Field(default=None, max_length=100)  # Ej: "> high_limit"
-    
-    triggered_at: datetime = Field(default_factory=datetime.utcnow, index=True)
-    acknowledged_at: Optional[datetime] = Field(default=None)
-    acknowledged_by: Optional[int] = Field(default=None, foreign_key="users.id")
-    resolved_at: Optional[datetime] = Field(default=None)
-    
-    # Relación
-    tag: Optional[Tag] = Relationship(back_populates="alarms")
-
-
-# ============ Screen/Layout Models ============
-
 class Screen(SQLModel, table=True):
     """
-    Pantalla SCADA: contenedor de nodos y conexiones.
-    Representa un layout de React Flow guardado.
+    Almacena el layout completo de React Flow en un JSON.
+    Eliminamos las tablas Node y Edge para simplificar.
     """
-    
     __tablename__ = "screens"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(index=True, max_length=100)
-    description: Optional[str] = Field(default=None, max_length=500)
-    thumbnail_url: Optional[str] = Field(default=None, max_length=500)
+    name: str = Field(unique=True)
+    slug: str = Field(unique=True, index=True) # Para la URL /screen/main
+    description: Optional[str] = None
     
-    # Configuración del viewport
-    viewport_x: float = Field(default=0)
-    viewport_y: float = Field(default=0)
-    viewport_zoom: float = Field(default=1)
+    # Aquí vive todo el grafo de React Flow
+    layout_data: Dict = Field(default={}, sa_column=Column(JSONB)) 
     
-    # Metadata
-    is_default: bool = Field(default=False)
-    created_by: Optional[int] = Field(default=None, foreign_key="users.id")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-    
-    # Relaciones
-    nodes: List["Node"] = Relationship(back_populates="screen")
-    edges: List["Edge"] = Relationship(back_populates="screen")
+    is_home: bool = Field(default=False)
 
 
-class Node(SQLModel, table=True):
-    """
-    Nodo de React Flow: representa un widget SCADA en el canvas.
-    """
-    
-    __tablename__ = "nodes"
+# ============ Alarm Models ============
+
+class AlarmDefinition(SQLModel, table=True):
+    __tablename__ = "alarm_definitions"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    node_id: str = Field(index=True, max_length=100)  # ID de React Flow
-    screen_id: int = Field(foreign_key="screens.id", index=True)
+    tag_id: int = Field(foreign_key="tags.id", unique=True)
     
-    node_type: NodeType = Field(default=NodeType.GAUGE)
-    label: Optional[str] = Field(default=None, max_length=100)
+    severity: AlarmSeverity = Field(default=AlarmSeverity.WARNING)
+    message: str
     
-    # Posición en el canvas
-    position_x: float = Field(default=0)
-    position_y: float = Field(default=0)
-    width: Optional[float] = Field(default=None)
-    height: Optional[float] = Field(default=None)
+    # Umbrales: {"HH": 90, "L": 10}
+    limits: Dict = Field(default={}, sa_column=Column(JSONB))
+    deadband: float = Field(default=0.0)
     
-    # Tag asociado (para mostrar datos en tiempo real)
-    tag_id: Optional[int] = Field(default=None, foreign_key="tags.id")
+    is_active: bool = Field(default=True)
     
-    # Configuración específica del widget (JSON)
-    config: Optional[dict] = Field(default=None, sa_column=Column(JSON))
-    
-    # Relación
-    screen: Optional[Screen] = Relationship(back_populates="nodes")
+    tag: Optional[Tag] = Relationship(back_populates="alarm_definition")
+    events: List["AlarmEvent"] = Relationship(back_populates="definition")
 
 
-class Edge(SQLModel, table=True):
-    """
-    Edge de React Flow: conexión entre nodos.
-    """
-    
-    __tablename__ = "edges"
+class AlarmEvent(SQLModel, table=True):
+    __tablename__ = "alarm_events"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    edge_id: str = Field(index=True, max_length=100)  # ID de React Flow
-    screen_id: int = Field(foreign_key="screens.id", index=True)
+    definition_id: int = Field(foreign_key="alarm_definitions.id")
     
-    source_node_id: str = Field(max_length=100)
-    target_node_id: str = Field(max_length=100)
-    source_handle: Optional[str] = Field(default=None, max_length=50)
-    target_handle: Optional[str] = Field(default=None, max_length=50)
+    start_time: datetime = Field(default_factory=datetime.utcnow)
+    end_time: Optional[datetime] = None
     
-    # Estilo
-    edge_type: str = Field(default="default", max_length=50)  # Ej: "smoothstep", "straight"
-    animated: bool = Field(default=False)
-    style: Optional[dict] = Field(default=None, sa_column=Column(JSON))
+    ack_time: Optional[datetime] = None
+    ack_user_id: Optional[int] = Field(default=None, foreign_key="users.id")
     
-    # Relación
-    screen: Optional[Screen] = Relationship(back_populates="edges")
+    trigger_value: float
+    status: str = Field(default="ACTIVE_UNACK") # Enum controlado por lógica
+    
+    definition: Optional[AlarmDefinition] = Relationship(back_populates="events")
