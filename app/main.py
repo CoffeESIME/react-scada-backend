@@ -1,31 +1,25 @@
 """
-Punto de entrada principal de la aplicación FastAPI SCADA.
+Punto de entrada principal de la aplicación FastAPI SCADA (Dockerized).
 """
-import sys
 import asyncio
-
-# --- PARCHE OBLIGATORIO PARA WINDOWS (Asyncpg & Psycopg) ---
-# Windows usa por defecto "ProactorEventLoop", que es incompatible con
-# los drivers de base de datos asíncronos. Esto fuerza el uso de "Selector".
-if sys.platform == 'win32':
-    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-# -----------------------------------------------------------
-
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+# Uvicorn se invoca desde el Dockerfile, pero lo importamos por si ejecutas manual
 import uvicorn 
 
 from app.core.config import settings
 from app.db.session import init_db
-from app.api import endpoints, auth 
+from app.api import endpoints 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifecycle manager para startup y shutdown."""
-    print(f"🚀 Starting {settings.app_name}...")
+    print(f"🚀 Starting {settings.app_name} in Docker...")
     
     # 1. Inicializar DB
+    # En Docker, a veces la DB tarda en arrancar. El init_db debería manejar reintentos
+    # o Docker-compose reiniciará el backend si falla al principio.
     if settings.debug:
         await init_db()
         print("✅ Database initialized")
@@ -34,20 +28,23 @@ async def lifespan(app: FastAPI):
     from app.services.engine import data_acquisition_loop
     from app.services.mqtt_listener import start_mqtt_listener
     
+    # Creamos las tareas
     data_task = asyncio.create_task(data_acquisition_loop())
     listener_task = asyncio.create_task(start_mqtt_listener())
     
-    print("✅ Background Services Started")
+    print("✅ Background Services Started (Poller & Listener)")
     
-    yield
+    yield # La app corre aquí
     
     # --- SHUTDOWN ---
     print("🛑 Shutting down...")
+    
     data_task.cancel()
     listener_task.cancel()
     
+    # Esperamos a que se cierren correctamente
     try:
-        await asyncio.wait([data_task, listener_task], timeout=5.0)
+        await asyncio.gather(data_task, listener_task, return_exceptions=True)
     except Exception as e:
         print(f"⚠️ Error stopping services: {e}")
             
@@ -56,9 +53,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
+    description="Sistema SCADA IIoT (Docker Environment)",
+    version="0.1.0",
     lifespan=lifespan,
 )
 
+# Configurar CORS
+# En Docker es vital permitir orígenes externos (tu host Windows)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -68,16 +69,25 @@ app.add_middleware(
 )
 
 app.include_router(endpoints.router, prefix="/api")
-app.include_router(auth.router)
 
 @app.get("/")
 async def root():
-    return {"status": "running", "driver": "psycopg", "os": sys.platform}
+    return {
+        "status": "running", 
+        "environment": "Docker/Linux", 
+        "db_driver": "psycopg"
+    }
 
 @app.get("/health")
 async def health():
     return {"status": "healthy"}
 
 if __name__ == "__main__":
-    # IMPORTANTE: reload=False evita el error WinError 10038
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8888, reload=False)
+    # CONFIGURACIÓN PARA EJECUCIÓN MANUAL DENTRO DEL CONTENEDOR (DEBUGGING)
+    # Host 0.0.0.0 es OBLIGATORIO en Docker para ser visible desde fuera
+    uvicorn.run(
+        "app.main:app", 
+        host="0.0.0.0", 
+        port=8888, 
+        reload=True # En Linux el reload funciona perfecto
+    )

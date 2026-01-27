@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
 
-router = APIRouter(prefix="/api/v1", tags=["general"])
+router = APIRouter(prefix="/v1", tags=["general"])
 
 
 @router.get("/health")
@@ -15,11 +15,17 @@ async def health_check():
     return {"status": "healthy", "service": "scada-backend"}
 
 
+from sqlmodel import select
+from app.db.models import Tag
+
+# ...
+
 @router.get("/tags")
 async def get_all_tags(session: AsyncSession = Depends(get_session)):
     """Obtiene todos los tags registrados en el sistema."""
-    # TODO: Implementar query a la base de datos
-    return {"tags": []}
+    result = await session.execute(select(Tag))
+    tags = result.scalars().all()
+    return {"tags": tags}
 
 
 @router.get("/tags/{tag_id}")
