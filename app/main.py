@@ -27,18 +27,25 @@ async def lifespan(app: FastAPI):
     from app.services.engine import data_acquisition_loop
     data_task = asyncio.create_task(data_acquisition_loop())
     print("✅ Data Acquisition Engine started")
+
+    # Iniciar Listener MQTT Externo
+    from app.services.mqtt_listener import start_mqtt_listener
+    listener_task = asyncio.create_task(start_mqtt_listener())
+    print("✅ MQTT Listener started")
     
     yield
     
     # Shutdown
     print("🛑 Shutting down...")
     
-    # Cancelar tarea de adquisición
+    # Cancelar tareas
     data_task.cancel()
+    listener_task.cancel()
     try:
         await data_task
+        await listener_task
     except asyncio.CancelledError:
-        print("✅ Data Acquisition Engine stopped")
+        print("✅ Services stopped")
 
 
 # Crear aplicación FastAPI
