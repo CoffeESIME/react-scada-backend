@@ -22,16 +22,23 @@ async def lifespan(app: FastAPI):
         await init_db()
         print("✅ Database initialized")
     
-    # TODO: Iniciar servicios de background
-    # from app.services.history import history_service
-    # await history_service.start()
+    # Iniciar motor de adquisición de datos
+    import asyncio
+    from app.services.engine import data_acquisition_loop
+    data_task = asyncio.create_task(data_acquisition_loop())
+    print("✅ Data Acquisition Engine started")
     
     yield
     
     # Shutdown
     print("🛑 Shutting down...")
-    # TODO: Detener servicios
-    # await history_service.stop()
+    
+    # Cancelar tarea de adquisición
+    data_task.cancel()
+    try:
+        await data_task
+    except asyncio.CancelledError:
+        print("✅ Data Acquisition Engine stopped")
 
 
 # Crear aplicación FastAPI
