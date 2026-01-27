@@ -19,8 +19,15 @@ class ProtocolFactory:
             protocol_type: "modbus", "opcua", "simulated", etc.
             connection_config: Diccionario con IP, Puerto, etc.
         """
-        # Normalizar a minúsculas para evitar errores
-        p_type = str(protocol_type).lower()
+        # Si es un Enum, obtenemos su valor ("modbus", "opcua", etc.)
+        if hasattr(protocol_type, "value"):
+            p_type = str(protocol_type.value).lower()
+        else:
+            p_type = str(protocol_type).lower()
+            
+        # Limpieza extra en caso de que venga como "ProtocolType.MODBUS"
+        if "protocoltype." in p_type:
+            p_type = p_type.split(".")[-1]
         
         if p_type == "modbus":
             return ModbusDriver(connection_config)
