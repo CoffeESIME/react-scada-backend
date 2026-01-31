@@ -1,7 +1,7 @@
 """
 Rutas generales de la API SCADA.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_session
@@ -15,26 +15,6 @@ async def health_check():
     return {"status": "healthy", "service": "scada-backend"}
 
 
-from sqlmodel import select
-from app.db.models import Tag
-
-# ...
-
-@router.get("/tags")
-async def get_all_tags(session: AsyncSession = Depends(get_session)):
-    """Obtiene todos los tags registrados en el sistema."""
-    result = await session.execute(select(Tag))
-    tags = result.scalars().all()
-    return {"tags": tags}
-
-
-@router.get("/tags/{tag_id}")
-async def get_tag(tag_id: int, session: AsyncSession = Depends(get_session)):
-    """Obtiene un tag específico por su ID."""
-    # TODO: Implementar query a la base de datos
-    raise HTTPException(status_code=404, detail="Tag not found")
-
-
 @router.get("/metrics/{tag_id}")
 async def get_tag_metrics(
     tag_id: int,
@@ -44,3 +24,4 @@ async def get_tag_metrics(
     """Obtiene las métricas históricas de un tag."""
     # TODO: Implementar query a TimescaleDB
     return {"tag_id": tag_id, "metrics": []}
+
