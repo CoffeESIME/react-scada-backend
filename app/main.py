@@ -10,7 +10,7 @@ import uvicorn
 
 from app.core.config import settings
 from app.db.session import init_db
-from app.api import endpoints 
+from app.api import endpoints, auth
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -18,8 +18,6 @@ async def lifespan(app: FastAPI):
     print(f"🚀 Starting {settings.app_name} in Docker...")
     
     # 1. Inicializar DB
-    # En Docker, a veces la DB tarda en arrancar. El init_db debería manejar reintentos
-    # o Docker-compose reiniciará el backend si falla al principio.
     if settings.debug:
         await init_db()
         print("✅ Database initialized")
@@ -28,13 +26,12 @@ async def lifespan(app: FastAPI):
     from app.services.engine import data_acquisition_loop
     from app.services.mqtt_listener import start_mqtt_listener
     
-    # Creamos las tareas
     data_task = asyncio.create_task(data_acquisition_loop())
     listener_task = asyncio.create_task(start_mqtt_listener())
     
     print("✅ Background Services Started (Poller & Listener)")
     
-    yield # La app corre aquí
+    yield
     
     # --- SHUTDOWN ---
     print("🛑 Shutting down...")
@@ -42,7 +39,6 @@ async def lifespan(app: FastAPI):
     data_task.cancel()
     listener_task.cancel()
     
-    # Esperamos a que se cierren correctamente
     try:
         await asyncio.gather(data_task, listener_task, return_exceptions=True)
     except Exception as e:
@@ -59,7 +55,6 @@ app = FastAPI(
 )
 
 # Configurar CORS
-# En Docker es vital permitir orígenes externos (tu host Windows)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -68,7 +63,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Routers
 app.include_router(endpoints.router, prefix="/api")
+app.include_router(auth.router)
 
 @app.get("/")
 async def root():
@@ -83,11 +80,9 @@ async def health():
     return {"status": "healthy"}
 
 if __name__ == "__main__":
-    # CONFIGURACIÓN PARA EJECUCIÓN MANUAL DENTRO DEL CONTENEDOR (DEBUGGING)
-    # Host 0.0.0.0 es OBLIGATORIO en Docker para ser visible desde fuera
     uvicorn.run(
         "app.main:app", 
         host="0.0.0.0", 
         port=8888, 
-        reload=True # En Linux el reload funciona perfecto
+        reload=True
     )
