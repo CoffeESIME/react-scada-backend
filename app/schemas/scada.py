@@ -56,24 +56,47 @@ class MetricRead(MetricBase):
 # Reemplaza la antigua lógica de Nodes/Edges individuales
 
 class ScreenBase(BaseModel):
-    name: str = Field(..., max_length=100)
-    slug: str = Field(..., max_length=100)
+    """Campos base de una pantalla SCADA."""
+    name: str = Field(..., min_length=1, max_length=100)
     description: Optional[str] = Field(None, max_length=500)
     is_home: bool = False
-    layout_data: Dict[str, Any] = {} # Contiene {nodes: [], edges: []} de React Flow
 
 class ScreenCreate(ScreenBase):
-    pass
+    """Schema para crear una pantalla."""
+    # slug es opcional - se genera desde name si no se proporciona
+    slug: Optional[str] = Field(None, max_length=100)
+    layout_data: Dict[str, Any] = Field(
+        default_factory=lambda: {"nodes": [], "edges": []},
+        description="Contenido de React Flow: {nodes: [], edges: []}"
+    )
 
 class ScreenUpdate(BaseModel):
-    name: Optional[str] = None
-    slug: Optional[str] = None
-    description: Optional[str] = None
+    """Schema para actualizar una pantalla (todos los campos opcionales)."""
+    name: Optional[str] = Field(None, max_length=100)
+    slug: Optional[str] = Field(None, max_length=100)
+    description: Optional[str] = Field(None, max_length=500)
     is_home: Optional[bool] = None
     layout_data: Optional[Dict[str, Any]] = None
 
-class ScreenRead(ScreenBase):
+class ScreenListItem(BaseModel):
+    """Schema ligero para listar pantallas (sin layout_data)."""
     id: int
+    name: str
+    slug: str
+    description: Optional[str] = None
+    is_home: bool
+
+    class Config:
+        from_attributes = True
+
+class ScreenRead(BaseModel):
+    """Schema completo de pantalla (incluye layout_data)."""
+    id: int
+    name: str
+    slug: str
+    description: Optional[str] = None
+    is_home: bool
+    layout_data: Dict[str, Any] = {}
 
     class Config:
         from_attributes = True
