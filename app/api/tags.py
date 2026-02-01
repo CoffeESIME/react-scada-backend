@@ -2,6 +2,8 @@
 Endpoints CRUD para gestión de Tags y Alarmas.
 Incluye paginación, validación polimórfica y creación de alarmas embebidas.
 """
+import json
+from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,7 +13,8 @@ from sqlalchemy.orm import selectinload
 
 from app.db.session import get_session
 from app.db.models import Tag, AlarmDefinition, ProtocolType
-from app.schemas.tag import TagCreate, TagUpdate, TagRead, TagList, AlarmDefinitionRead
+from app.core.mqtt_client import mqtt_client
+from app.schemas.tag import TagCreate, TagUpdate, TagRead, TagList, AlarmDefinitionRead, TagWrite
 
 router = APIRouter(prefix="/tags", tags=["tags"])
 
@@ -142,6 +145,50 @@ async def get_tag(
         raise HTTPException(status_code=404, detail="Tag no encontrado")
     
     return tag
+
+
+# ============ WRITE (Command) ============
+
+@router.post("/{tag_id}/write", status_code=200)
+async def write_tag_value(
+    tag_id: int,
+    write_data: TagWrite,
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    Escribe un valor en un Tag (Dispara comando).
+    Simula la escritura publicando inmediatamente el nuevo valor en MQTT
+    para que el frontend se actualice en tiempo real.
+    """
+    # 1. Buscar Tag
+    result = await session.execute(
+        select(Tag).where(Tag.id == tag_id)
+    )
+    tag = result.scalar_one_or_none()
+    
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag no encontrado")
+    
+    # 2. Log de simulación (como pidió el usuario)
+    print(f"📝 [SIMULATION] Escribiendo {write_data.value} en Tag {tag.id} ({tag.name})")
+    
+    # 3. Publicar en MQTT para feedback visual inmediato
+    # Usamos el mismo formato que engine.py para que el frontend lo entienda
+    payload = {
+        "tag_id": tag.id,
+        "tag_name": tag.name,
+        "value": write_data.value,
+        "timestamp": datetime.utcnow().isoformat(),
+        "quality": "MANUAL_WRITE"
+    }
+    
+    topic = tag.mqtt_topic
+    success = await mqtt_client.publish(topic, json.dumps(payload), qos=1)
+    
+    if not success:
+        raise HTTPException(status_code=500, detail="Error publicando en MQTT")
+        
+    return {"status": "ok", "value": write_data.value, "published_to": topic}
 
 
 # ============ UPDATE ============

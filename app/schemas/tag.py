@@ -143,6 +143,14 @@ class TagUpdate(BaseModel):
         return self
 
 
+
+# ============ Tag Write Schema ============
+
+class TagWrite(BaseModel):
+    """Schema para escribir un valor en un Tag."""
+    value: Any = Field(..., description="Valor a escribir en el tag")
+
+
 # ============ Tag Read Schemas ============
 
 class AlarmDefinitionRead(BaseModel):
