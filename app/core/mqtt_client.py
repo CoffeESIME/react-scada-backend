@@ -59,7 +59,7 @@ class MQTTClient:
             logger.error(f"Failed to publish to {topic}: {e}")
             return False
     
-    async def publish_alarm(self, alarm_id: str, severity: str, message: str) -> bool:
+    async def publish_alarm(self, alarm_id: str, severity: str, message: str, status: str = "ACTIVE") -> bool:
         """
         Publica una alarma en el topic de alarmas.
         
@@ -67,6 +67,7 @@ class MQTTClient:
             alarm_id: Identificador único de la alarma
             severity: Nivel de severidad (info, warning, critical)
             message: Descripción de la alarma
+            status: Estado (ACTIVE, RESOLVED)
         """
         import json
         from datetime import datetime
@@ -75,6 +76,7 @@ class MQTTClient:
             "alarm_id": alarm_id,
             "severity": severity,
             "message": message,
+            "status": status,
             "timestamp": datetime.utcnow().isoformat()
         })
         

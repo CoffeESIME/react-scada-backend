@@ -20,6 +20,13 @@ class ProtocolType(str, Enum):
     MQTT = "mqtt"
     SIMULATED = "simulated"
 
+class AlarmStatus(str, Enum):
+    ACTIVE_UNACK = "ACTIVE_UNACK"
+    ACTIVE_ACK = "ACTIVE_ACK"
+    CLEARED_UNACK = "CLEARED_UNACK" 
+    CLEARED_ACK = "CLEARED_ACK"
+    RESOLVED = "RESOLVED" # Alias simple
+
 # ============ User Model ============
 
 class User(SQLModel, table=True):

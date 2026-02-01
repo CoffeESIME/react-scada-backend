@@ -9,12 +9,14 @@ from typing import Dict, Any, Optional
 
 import aiomqtt
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
 from app.core.mqtt_client import mqtt_client
 from app.db.session import async_session_factory
 from app.db.models import Tag, ProtocolType
 from app.services.storage import save_metric
+from app.services.alarms.engine import alarm_engine
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +29,7 @@ async def load_topic_map():
     global _topic_map
     try:
         async with async_session_factory() as session:
-            stmt = select(Tag).where(Tag.source_protocol == ProtocolType.MQTT)
+            stmt = select(Tag).options(selectinload(Tag.alarm_definition)).where(Tag.source_protocol == ProtocolType.MQTT)
             result = await session.execute(stmt)
             tags = result.scalars().all()
             
@@ -140,6 +142,9 @@ async def process_external_message(message):
         
         # Usamos el cliente global de publicación (para no bloquear el loop de escucha)
         await mqtt_client.publish(internal_topic, payload, qos=0)
+        
+        # 5. Evaluar Alarmas
+        await alarm_engine.evaluate(tag, value)
         
     except Exception as e:
         logger.error(f"Error processing external MQTT message: {e}")

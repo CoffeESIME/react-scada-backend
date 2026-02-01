@@ -3,11 +3,13 @@ import json
 import logging
 from datetime import datetime
 from sqlalchemy import select, or_
+from sqlalchemy.orm import selectinload
 
 from app.db.session import async_session_factory
 from app.db.models import Tag, ProtocolType  # Asegúrate de importar tu Enum
 from app.services.bridges.factory import ProtocolFactory
 from app.core.mqtt_client import mqtt_client
+from app.services.alarms.engine import alarm_engine
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +26,7 @@ async def data_acquisition_loop():
             async with async_session_factory() as session:
                 # 1. FILTRADO INTELIGENTE
                 # Solo traemos tags habilitados Y que NO sean MQTT
-                stmt = select(Tag).where(
+                stmt = select(Tag).options(selectinload(Tag.alarm_definition)).where(
                     Tag.is_enabled == True,
                     Tag.source_protocol.in_([
                         ProtocolType.MODBUS, 
@@ -80,6 +82,9 @@ async def data_acquisition_loop():
                         # OJO: Aquí NO guardamos en SQL todavía.
                         # Dejamos que el servicio de "History Subscriber" lo haga
                         # para no bloquear este loop de lectura.
+                        
+                        # 5. Evaluar Alarmas
+                        await alarm_engine.evaluate(tag, raw_value)
                             
                 except Exception as e:
                     logger.error(f"⚠️ Error leyendo tag {tag.name}: {e}")
