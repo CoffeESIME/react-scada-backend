@@ -25,6 +25,11 @@ async def get_history(
     if not tag_id_list:
         return []
 
+    # Query tags to get names
+    tag_query = select(Tag).where(Tag.id.in_(tag_id_list))
+    tag_result = await session.execute(tag_query)
+    tags_map = {tag.id: tag.name for tag in tag_result.scalars().all()}
+
     # Query metrics
     # Optimización: En TimescaleDB, siempre filtrar por tiempo primero.
     query = (
@@ -39,15 +44,6 @@ async def get_history(
     metrics = result.scalars().all()
 
     # Agrupar por Tag ID para facilitar el consumo del frontend
-    # Formato de retorno: 
-    # [
-    #   { 
-    #     tagId: 1, 
-    #     data: [{x: timestamp, y: value}, ...] 
-    #   },
-    #   ...
-    # ]
-    
     grouped_data = {tid: [] for tid in tag_id_list}
     
     for m in metrics:
@@ -58,7 +54,11 @@ async def get_history(
             })
 
     response = [
-        {"tagId": tid, "data": data}
+        {
+            "tagId": tid, 
+            "tagName": tags_map.get(tid, f"Tag {tid}"),
+            "data": data
+        }
         for tid, data in grouped_data.items()
     ]
 
