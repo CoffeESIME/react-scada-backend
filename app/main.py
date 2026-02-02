@@ -25,11 +25,13 @@ async def lifespan(app: FastAPI):
     # 2. Iniciar Motores
     from app.services.engine import data_acquisition_loop
     from app.services.mqtt_listener import start_mqtt_listener
+    from app.services.history import history_service
     
     data_task = asyncio.create_task(data_acquisition_loop())
     listener_task = asyncio.create_task(start_mqtt_listener())
+    await history_service.start()
     
-    print("✅ Background Services Started (Poller & Listener)")
+    print("✅ Background Services Started (Poller, Listener & History)")
     
     yield
     
@@ -38,6 +40,7 @@ async def lifespan(app: FastAPI):
     
     data_task.cancel()
     listener_task.cancel()
+    await history_service.stop()
     
     try:
         await asyncio.gather(data_task, listener_task, return_exceptions=True)
