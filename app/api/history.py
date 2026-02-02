@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlmodel import select
+from sqlmodel import select, desc
 from typing import List, Optional
 from datetime import datetime, timedelta
 
@@ -63,3 +63,39 @@ async def get_history(
     ]
 
     return response
+
+@router.get("/history/latest/{tag_id}")
+async def get_latest_history(
+    tag_id: int,
+    limit: int = 50,
+    session: AsyncSession = Depends(get_session)
+):
+    """
+    Fetch the latest N records for a specific tag.
+    Returns data in chronological order (oldest to newest) for charting.
+    """
+    # 1. Query latest records (descending time)
+    query = (
+        select(Metric)
+        .where(Metric.tag_id == tag_id)
+        .order_by(desc(Metric.time))
+        .limit(limit)
+    )
+    
+    result = await session.execute(query)
+    metrics = result.scalars().all()
+    
+    # 2. Reverse to get chronological order (past -> present)
+    metrics = list(metrics)
+    metrics.reverse()
+    
+    # 3. Format result
+    data = [{
+        "x": m.time.isoformat(),
+        "y": m.value
+    } for m in metrics]
+
+    return {
+        "tagId": tag_id,
+        "data": data
+    }
