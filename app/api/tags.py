@@ -280,6 +280,13 @@ async def delete_tag(
     # Eliminar alarma primero si existe (o configurar cascade en el modelo)
     if tag.alarm_definition:
         await session.delete(tag.alarm_definition)
+        
+    # Eliminar historial asociado (metrics)
+    from app.db.models import Metric
+    from sqlmodel import delete
+    await session.execute(
+        delete(Metric).where(Metric.tag_id == tag_id)
+    )
     
     await session.delete(tag)
     await session.commit()
