@@ -5,7 +5,7 @@ Se suscribe a topics configurados en la BD, normaliza los datos y los guarda.
 import asyncio
 import json
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, List, Any, Optional
 
 import aiomqtt
 from sqlalchemy import select
@@ -20,9 +20,8 @@ from app.services.alarms.engine import alarm_engine
 
 logger = logging.getLogger(__name__)
 
-# Mapa en memoria: Topic -> Tag Object
-# En producción, esto debería sincronizarse periódicamente
-_topic_map: Dict[str, Tag] = {}
+# Mapa en memoria: Topic -> Lista de Tags (soporta múltiples tags por topic)
+_topic_map: Dict[str, List[Tag]] = {}
 
 async def load_topic_map():
     """Carga los tags MQTT externos desde la base de datos."""
@@ -33,17 +32,20 @@ async def load_topic_map():
             result = await session.execute(stmt)
             tags = result.scalars().all()
             
-            new_map = {}
+            new_map: Dict[str, List[Tag]] = {}
             for tag in tags:
                 # La config debe tener "topic"
                 # ej: {"topic": "sala1/temp", "json_key": "t"}
                 config = tag.connection_config
                 topic = config.get("topic")
                 if topic:
-                    new_map[topic] = tag
+                    if topic not in new_map:
+                        new_map[topic] = []
+                    new_map[topic].append(tag)
             
             _topic_map = new_map
-            logger.info(f"Loaded {len(_topic_map)} external MQTT tags.")
+            total_tags = sum(len(tags) for tags in _topic_map.values())
+            logger.info(f"Loaded {total_tags} external MQTT tags across {len(_topic_map)} topics.")
             
     except Exception as e:
         logger.error(f"Error loading topic map: {e}")
@@ -59,6 +61,9 @@ async def start_mqtt_listener():
     
     # Cargar mapa inicial
     await load_topic_map()
+    
+    # Iniciar tarea de refresco periódico del mapa
+    asyncio.create_task(_periodic_topic_refresh())
     
     while True:
         try:
@@ -79,7 +84,8 @@ async def start_mqtt_listener():
 
                 for topic in _topic_map.keys():
                     await client.subscribe(topic)
-                    logger.info(f"📡 Listening to external topic: {topic}")
+                    tags_on_topic = _topic_map[topic]
+                    logger.info(f"📡 Listening to external topic: {topic} ({len(tags_on_topic)} tags)")
                 
                 # Loop de mensajes
                 async for message in client.messages:
@@ -92,42 +98,81 @@ async def start_mqtt_listener():
             logger.error(f"MQTT Listener unexpected error: {e}")
             await asyncio.sleep(5)
 
+async def _periodic_topic_refresh():
+    """Recarga el mapa de topics cada 30 segundos para detectar cambios."""
+    while True:
+        await asyncio.sleep(30)  # Refrescar cada 30 segundos
+        logger.info("[MQTT LISTENER] Refrescando mapa de topics...")
+        await load_topic_map()
+        total_tags = sum(len(tags) for tags in _topic_map.values())
+        logger.info(f"[MQTT LISTENER] Topics actuales: {list(_topic_map.keys())} ({total_tags} tags total)")
+
 async def process_external_message(message):
     """Procesa un mensaje de un dispositivo externo."""
     try:
         topic = str(message.topic)
         payload_str = message.payload.decode()
         
-        # 1. Identificar tag
-        # TODO: Soportar wildcards si fuera necesario
-        tag = _topic_map.get(topic)
-        if not tag:
-            return # No configurado
-            
-        config = tag.connection_config
+        logger.info(f"[MQTT DEBUG] 📩 Mensaje recibido en: {topic}")
+        logger.info(f"[MQTT DEBUG] 📦 Payload: {payload_str[:200]}")
         
-        # 2. Parsear valor
-        value = 0.0
+        # 1. Obtener lista de tags para este topic
+        tags = _topic_map.get(topic)
+        if not tags:
+            logger.warning(f"[MQTT DEBUG] ⚠️ Topic '{topic}' NO está en el mapa de tags. Topics configurados: {list(_topic_map.keys())}")
+            return
+        
+        logger.info(f"[MQTT DEBUG] ✅ {len(tags)} tag(s) encontrado(s) para este topic")
+        
+        # Parsear el payload una sola vez
+        parsed_data = None
+        try:
+            parsed_data = json.loads(payload_str)
+        except json.JSONDecodeError:
+            # No es JSON, se tratará como valor raw
+            pass
+        
+        # 2. Procesar cada tag asociado a este topic
+        for tag in tags:
+            await _process_tag_value(tag, payload_str, parsed_data)
+                
+    except Exception as e:
+        logger.error(f"[MQTT DEBUG] ❌ Error processing external MQTT message: {e}")
+
+
+async def _process_tag_value(tag: Tag, payload_str: str, parsed_data: Optional[dict]):
+    """Procesa el valor para un tag específico."""
+    try:
+        config = tag.connection_config
         json_key = config.get("json_key")
         
-        try:
-            if json_key:
-                # Asumimos JSON: {"temp": 24.5}
-                data = json.loads(payload_str)
-                value = float(data.get(json_key, 0.0))
-            else:
-                # Raw value: "24.5"
-                value = float(payload_str)
-        except (ValueError, json.JSONDecodeError):
-            logger.warning(f"Failed to parse payload from {topic}: {payload_str}")
-            return
-
+        logger.info(f"[MQTT DEBUG] 🏷️ Procesando tag: id={tag.id}, name={tag.name}, json_key={json_key}")
+        
+        # Extraer valor
+        value = 0.0
+        if json_key and parsed_data:
+            # Extraer valor del JSON
+            value = float(parsed_data.get(json_key, 0.0))
+            logger.info(f"[MQTT DEBUG] 📊 Valor extraído (json_key={json_key}): {value}")
+        elif parsed_data is None:
+            # Raw value
+            value = float(payload_str)
+            logger.info(f"[MQTT DEBUG] 📊 Valor raw: {value}")
+        else:
+            # JSON pero sin json_key especificado - intentar usar el primer valor numérico
+            for k, v in parsed_data.items():
+                try:
+                    value = float(v)
+                    logger.info(f"[MQTT DEBUG] 📊 Usando primer valor numérico del JSON ({k}): {value}")
+                    break
+                except (ValueError, TypeError):
+                    continue
+        
         # 3. Guardar en TimescaleDB
+        logger.info(f"[MQTT DEBUG] 💾 Guardando métrica: tag_id={tag.id}, value={value}")
         await save_metric(tag_id=tag.id, value=value)
         
-        # 4. Rebotar al sistema SCADA (Normalización)
-        # Publicamos en el topic interno "scada/tags/..." para que el frontend lo vea
-        # Si el tag tiene un mqtt_topic configurado, usamos ese.
+        # 4. Publicar al topic interno para el frontend
         internal_topic = tag.mqtt_topic
         if not internal_topic:
             internal_topic = f"scada/tags/{tag.name}"
@@ -137,14 +182,14 @@ async def process_external_message(message):
             "tag_name": tag.name,
             "value": value,
             "quality": "GOOD",
-            #"timestamp": ... (opcional, si no el frontend pone now)
         })
         
-        # Usamos el cliente global de publicación (para no bloquear el loop de escucha)
+        logger.info(f"[MQTT DEBUG] 📤 Publicando a topic interno: {internal_topic}")
         await mqtt_client.publish(internal_topic, payload, qos=0)
         
         # 5. Evaluar Alarmas
         await alarm_engine.evaluate(tag, value)
         
     except Exception as e:
-        logger.error(f"Error processing external MQTT message: {e}")
+        logger.error(f"[MQTT DEBUG] ❌ Error procesando tag {tag.name}: {e}")
+
