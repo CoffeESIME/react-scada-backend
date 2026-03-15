@@ -17,6 +17,7 @@ COPY pyproject.toml poetry.lock ./
 
 # Install dependencies (no interaction, no ansi color, no virtualenv creation as we are in docker)
 RUN poetry config virtualenvs.create false \
+    && poetry lock \
     && poetry install --no-interaction --no-ansi --no-root
 
 # Copy application code

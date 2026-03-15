@@ -18,9 +18,8 @@ async def lifespan(app: FastAPI):
     print(f"🚀 Starting {settings.app_name} in Docker...")
     
     # 1. Inicializar DB
-    if settings.debug:
-        await init_db()
-        print("✅ Database initialized")
+    await init_db()
+    print("✅ Database initialized")
     
     # 2. Iniciar Motores
     from app.services.engine import data_acquisition_loop
