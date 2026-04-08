@@ -27,6 +27,7 @@ wheels/
 # === Virtual Environments ===
 .env
 .venv
+.env.*
 env/
 venv/
 ENV/
@@ -93,3 +94,9 @@ alembic/versions/*.pyc
 # === Docker ===
 # Ignore local docker volumes if any
 docker-volumes/
+
+# === Certificates ===
+*.crt
+*.key
+*.pem
+*.csr
