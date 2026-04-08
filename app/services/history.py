@@ -13,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.mqtt_client import _build_tls_context
 from app.db.session import async_session_factory
 from app.db.models import Metric, Tag
 from app.services.storage import save_metric
@@ -74,7 +75,8 @@ class HistoryService:
                     port=settings.mqtt_broker_port,
                     username=settings.mqtt_username,
                     password=settings.mqtt_password,
-                    identifier=f"{settings.mqtt_client_id}-history"
+                    identifier=f"{settings.mqtt_client_id}-history",
+                    tls_context=_build_tls_context(settings)
                 ) as client:
                     
                     # Suscribirse al wildcard de tags

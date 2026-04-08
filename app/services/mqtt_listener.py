@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
-from app.core.mqtt_client import mqtt_client
+from app.core.mqtt_client import mqtt_client, _build_tls_context
 from app.db.session import async_session_factory
 from app.db.models import Tag, ProtocolType
 from app.services.storage import save_metric
@@ -72,7 +72,8 @@ async def start_mqtt_listener():
                 port=settings.mqtt_broker_port,
                 username=settings.mqtt_username,
                 password=settings.mqtt_password,
-                identifier=f"{settings.mqtt_client_id}-listener"
+                identifier=f"{settings.mqtt_client_id}-listener",
+                tls_context=_build_tls_context(settings)
             ) as client:
                 
                 # Suscribirse a los topics detectados
