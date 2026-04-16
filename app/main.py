@@ -25,7 +25,12 @@ async def lifespan(app: FastAPI):
     from app.services.engine import data_acquisition_loop
     from app.services.mqtt_listener import start_mqtt_listener
     from app.services.history import history_service
+    from app.core.mqtt_client import mqtt_client  # <--- IMPORTANTE
     
+    # Iniciar la conexión persistente TCP de subida (Publishing)
+    await mqtt_client.startup()
+    print("✅ MQTT Publisher Client Started")
+
     data_task = asyncio.create_task(data_acquisition_loop())
     listener_task = asyncio.create_task(start_mqtt_listener())
     await history_service.start()
@@ -40,6 +45,7 @@ async def lifespan(app: FastAPI):
     data_task.cancel()
     listener_task.cancel()
     await history_service.stop()
+    await mqtt_client.shutdown()  # <--- Detener limpiamente
     
     try:
         await asyncio.gather(data_task, listener_task, return_exceptions=True)

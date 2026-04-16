@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 # Mapa en memoria: Topic -> Lista de Tags (soporta múltiples tags por topic)
 _topic_map: Dict[str, List[Tag]] = {}
+_active_client: Optional[aiomqtt.Client] = None
 
 async def load_topic_map():
     """Carga los tags MQTT externos desde la base de datos."""
@@ -76,6 +77,9 @@ async def start_mqtt_listener():
                 tls_context=_build_tls_context(settings)
             ) as client:
                 
+                global _active_client
+                _active_client = client
+                
                 # Suscribirse a los topics detectados
                 if not _topic_map:
                     logger.warning("No external MQTT tags configured. Waiting...")
@@ -100,13 +104,28 @@ async def start_mqtt_listener():
             await asyncio.sleep(5)
 
 async def _periodic_topic_refresh():
-    """Recarga el mapa de topics cada 30 segundos para detectar cambios."""
+    """Recarga el mapa de topics cada 30 segundos para detectar cambios y se suscribe dinámicamente."""
+    global _active_client
     while True:
         await asyncio.sleep(30)  # Refrescar cada 30 segundos
-        logger.info("[MQTT LISTENER] Refrescando mapa de topics...")
+        
+        old_topics = set(_topic_map.keys())
         await load_topic_map()
+        new_topics = set(_topic_map.keys())
+        
+        added_topics = new_topics - old_topics
+        
+        if added_topics and _active_client is not None:
+            for topic in added_topics:
+                try:
+                    await _active_client.subscribe(topic)
+                    logger.info(f"[MQTT LISTENER] 🔌 Suscrito dinámicamente al nuevo topic: {topic}")
+                except Exception as e:
+                    logger.error(f"[MQTT LISTENER] Error suscribiendo a nuevo topic {topic}: {e}")
+                    
         total_tags = sum(len(tags) for tags in _topic_map.values())
-        logger.info(f"[MQTT LISTENER] Topics actuales: {list(_topic_map.keys())} ({total_tags} tags total)")
+        if added_topics:
+            logger.info(f"[MQTT LISTENER] Topics actualizados: {list(_topic_map.keys())} ({total_tags} tags total)")
 
 async def process_external_message(message):
     """Procesa un mensaje de un dispositivo externo."""
