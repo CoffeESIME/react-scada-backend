@@ -5,7 +5,8 @@ from typing import List, Optional
 from datetime import datetime, timedelta
 
 from app.db.session import get_session
-from app.db.models import Metric, Tag
+from app.db.models import Metric, Tag, User
+from app.users import current_active_user
 
 router = APIRouter()
 
@@ -14,7 +15,8 @@ async def get_history(
     tag_ids: str = Query(..., description="Comma-separated tag IDs (e.g. '1,2,3')"),
     start: datetime = Query(..., description="Start timestamp (ISO 8601)"),
     end: datetime = Query(..., description="End timestamp (ISO 8601)"),
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_active_user)
 ):
     """
     Fetch historical data for multiple tags within a time range.
@@ -68,7 +70,8 @@ async def get_history(
 async def get_latest_history(
     tag_id: int,
     limit: int = 50,
-    session: AsyncSession = Depends(get_session)
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_active_user)
 ):
     """
     Fetch the latest N records for a specific tag.

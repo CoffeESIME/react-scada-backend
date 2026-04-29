@@ -7,7 +7,7 @@ from typing import Optional, List, Any, Dict
 
 from pydantic import BaseModel, Field
 
-from app.db.models import AlarmSeverity, ProtocolType
+from app.db.models import AlarmSeverity, ProtocolType, ScreenAccessRole
 
 # ============ Tag Schemas ============
 
@@ -85,6 +85,8 @@ class ScreenListItem(BaseModel):
     slug: str
     description: Optional[str] = None
     is_home: bool
+    owner_id: Optional[int] = None
+    access_role: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -97,6 +99,23 @@ class ScreenRead(BaseModel):
     description: Optional[str] = None
     is_home: bool
     layout_data: Dict[str, Any] = {}
+    owner_id: Optional[int] = None
+    access_role: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class ScreenShareRequest(BaseModel):
+    username_or_email: str
+    role: ScreenAccessRole = ScreenAccessRole.VIEWER
+
+class ScreenShareResponse(BaseModel):
+    id: int
+    screen_id: int
+    user_id: int
+    role: ScreenAccessRole
+    username: str
+    email: str
 
     class Config:
         from_attributes = True

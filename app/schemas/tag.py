@@ -2,7 +2,7 @@
 Schemas avanzados para Tags con validación polimórfica.
 Valida connection_config dinámicamente según source_protocol.
 """
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Literal
 from pydantic import BaseModel, Field, model_validator, ConfigDict
 import re
 
@@ -13,6 +13,7 @@ from app.db.models import ProtocolType, AlarmSeverity
 
 class ModbusConfig(BaseModel):
     """Config requerida para protocolo Modbus."""
+    model_config = ConfigDict(extra='ignore')
     host: str = Field(..., description="IP del dispositivo Modbus")
     port: int = Field(default=502, ge=1, le=65535)
     register: int = Field(..., ge=0, description="Dirección del registro")
@@ -22,18 +23,21 @@ class ModbusConfig(BaseModel):
 
 class OpcuaConfig(BaseModel):
     """Config requerida para protocolo OPC UA."""
+    model_config = ConfigDict(extra='ignore')
     url: str = Field(..., description="URL del servidor OPC UA")
     node_id: str = Field(..., description="NodeID del nodo a leer")
 
 
 class MqttExternalConfig(BaseModel):
     """Config requerida para protocolo MQTT externo."""
+    model_config = ConfigDict(extra='ignore')
     topic: str = Field(..., description="Topic MQTT a suscribir")
     json_key: Optional[str] = Field(None, description="Clave JSON para extraer el valor")
 
 
 class SimulatedConfig(BaseModel):
     """Config requerida para protocolo simulado."""
+    model_config = ConfigDict(extra='ignore')
     signal_type: str = Field(
         default="sine", 
         pattern="^(sine|random|static|ramp)$",
@@ -73,6 +77,8 @@ class TagCreate(BaseModel):
     scan_rate_ms: int = Field(default=1000, ge=100, le=3600000)
     mqtt_topic: Optional[str] = Field(None, max_length=200)
     is_enabled: bool = True
+    data_type: Literal['boolean', 'integer', 'float'] = 'float'
+    access_mode: Literal['R', 'W', 'RW'] = 'R'
     
     # Alarma opcional embebida
     alarm: Optional[AlarmDefinitionEmbedded] = None
@@ -121,6 +127,8 @@ class TagUpdate(BaseModel):
     scan_rate_ms: Optional[int] = Field(None, ge=100, le=3600000)
     mqtt_topic: Optional[str] = Field(None, max_length=200)
     is_enabled: Optional[bool] = None
+    data_type: Optional[Literal['boolean', 'integer', 'float']] = None
+    access_mode: Optional[Literal['R', 'W', 'RW']] = None
     
     # Alarma opcional para actualizar/crear
     alarm: Optional[AlarmDefinitionEmbedded] = None
@@ -181,6 +189,9 @@ class TagRead(BaseModel):
     scan_rate_ms: int
     mqtt_topic: str
     is_enabled: bool
+    data_type: str = 'float'
+    access_mode: str = 'R'
+    owner_id: Optional[int] = None
     
     # Alarma relacionada (puede ser None)
     alarm_definition: Optional[AlarmDefinitionRead] = None

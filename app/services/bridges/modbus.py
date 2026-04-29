@@ -116,8 +116,8 @@ class ModbusDriver(IndustrialDriver):
             logger.warning("[MODBUS] Cliente no conectado para lectura")
             return None
             
-        register = tag_config.get("register", 0)
-        count = tag_config.get("count", 1)
+        register = int(tag_config.get("register", 0))
+        count = int(tag_config.get("count", 1))
         reg_type = tag_config.get("register_type", "holding")
         
         try:
@@ -173,7 +173,7 @@ class ModbusDriver(IndustrialDriver):
             logger.warning("[MODBUS] Cliente no conectado para escritura")
             return False
             
-        register = tag_config.get("register", 0)
+        register = int(tag_config.get("register", 0))
         reg_type = tag_config.get("register_type", "holding")
         
         try:

@@ -5,6 +5,7 @@ from typing import Dict, Any
 from .modbus import ModbusDriver
 from .opcua import OpcUaDriver
 from .simulator import SimulatorDriver
+from .mqtt_bridge import MqttBridge
 from .base import IndustrialDriver
 
 class ProtocolFactory:
@@ -13,11 +14,11 @@ class ProtocolFactory:
     @staticmethod
     def get_driver(protocol_type: str, connection_config: Dict[str, Any]) -> IndustrialDriver:
         """
-        Retorna una instancia del driver correspondiente.
+        Retorna una instancia del driver correspondiente al protocolo.
         
         Args:
-            protocol_type: "modbus", "opcua", "simulated", etc.
-            connection_config: Diccionario con IP, Puerto, etc.
+            protocol_type: "modbus", "opcua", "simulated", "mqtt", etc.
+            connection_config: Diccionario con la configuración de conexión del tag.
         """
         # Si es un Enum, obtenemos su valor ("modbus", "opcua", etc.)
         if hasattr(protocol_type, "value"):
@@ -33,9 +34,9 @@ class ProtocolFactory:
             return ModbusDriver(connection_config)
         elif p_type == "opcua":
             return OpcUaDriver(connection_config)
-        elif p_type == "simulated" or p_type == "simulator":
+        elif p_type in ("simulated", "simulator"):
             return SimulatorDriver(connection_config)
+        elif p_type == "mqtt":
+            return MqttBridge(connection_config)
         else:
-            # Fallback seguro: Simulator o Error
-            # Por ahora lanzamos error para detectar configs malas
-            raise ValueError(f"Protocolo {protocol_type} no soportado")
+            raise ValueError(f"Protocolo '{protocol_type}' no soportado por ProtocolFactory")

@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional, List, Dict, Any
 from sqlmodel import SQLModel, Field, Relationship, Column
-from sqlalchemy import JSON, PrimaryKeyConstraint
+from sqlalchemy import JSON, PrimaryKeyConstraint, String as SAString
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from fastapi_users.db import SQLAlchemyBaseUserTable
 
@@ -26,6 +26,20 @@ class AlarmStatus(str, Enum):
     CLEARED_UNACK = "CLEARED_UNACK" 
     CLEARED_ACK = "CLEARED_ACK"
     RESOLVED = "RESOLVED" # Alias simple
+
+class ScreenAccessRole(str, Enum):
+    VIEWER = "VIEWER"
+    EDITOR = "EDITOR"
+
+class DataType(str, Enum):
+    BOOLEAN = "boolean"
+    INTEGER = "integer"
+    FLOAT = "float"
+
+class AccessMode(str, Enum):
+    READ = "R"
+    WRITE = "W"
+    READ_WRITE = "RW"
 
 # ============ User Model ============
 
@@ -71,6 +85,19 @@ class Tag(SQLModel, table=True):
     
     is_enabled: bool = Field(default=True)
     
+    # Signal metadata — stored as plain VARCHAR to avoid PostgreSQL native enum type conflicts
+    data_type: str = Field(
+        default="float",
+        sa_column=Column(SAString, nullable=False, server_default="float")
+    )
+    access_mode: str = Field(
+        default="R",
+        sa_column=Column(SAString, nullable=False, server_default="R")
+    )
+    
+    # Ownership
+    owner_id: Optional[int] = Field(default=None, foreign_key="users.id")
+    
     # Relaciones
     metrics: List["Metric"] = Relationship(back_populates="tag")
     alarm_definition: Optional["AlarmDefinition"] = Relationship(back_populates="tag")
@@ -112,6 +139,20 @@ class Screen(SQLModel, table=True):
     layout_data: Dict = Field(default={}, sa_column=Column(JSONB)) 
     
     is_home: bool = Field(default=False)
+    
+    # Ownership
+    owner_id: Optional[int] = Field(default=None, foreign_key="users.id")
+
+class ScreenAccess(SQLModel, table=True):
+    """
+    Tabla intermedia para gestionar con quién se comparten las pantallas.
+    """
+    __tablename__ = "screen_access"
+    
+    id: Optional[int] = Field(default=None, primary_key=True)
+    screen_id: int = Field(foreign_key="screens.id", index=True)
+    user_id: int = Field(foreign_key="users.id", index=True)
+    role: ScreenAccessRole = Field(default=ScreenAccessRole.VIEWER)
 
 
 # ============ Alarm Models ============

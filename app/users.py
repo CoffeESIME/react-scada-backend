@@ -76,3 +76,10 @@ fastapi_users = FastAPIUsers[User, int](
 # Dependencias comunes
 current_active_user = fastapi_users.current_user(active=True)
 current_superuser = fastapi_users.current_user(active=True, superuser=True)
+
+async def current_admin_user(user: User = Depends(current_active_user)):
+    """Verifica que el usuario sea administrador o superusuario."""
+    from fastapi import HTTPException
+    if user.role != "ADMIN" and not user.is_superuser:
+        raise HTTPException(status_code=403, detail="No tienes permisos de Administrador para realizar esta acción.")
+    return user
