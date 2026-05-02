@@ -69,7 +69,7 @@ async def data_acquisition_loop():
                             "tag_id": tag.id,
                             "tag_name": tag.name,
                             "value": raw_value,
-                            "timestamp": datetime.utcnow().isoformat(),
+                            "timestamp": datetime.utcnow().isoformat() + "Z",
                             "quality": "GOOD"
                         }
                         

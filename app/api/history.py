@@ -51,7 +51,7 @@ async def get_history(
     for m in metrics:
         if m.tag_id in grouped_data:
             grouped_data[m.tag_id].append({
-                "x": m.time.isoformat(),
+                "x": m.time.isoformat() + "Z",
                 "y": m.value
             })
 
@@ -94,7 +94,7 @@ async def get_latest_history(
     
     # 3. Format result
     data = [{
-        "x": m.time.isoformat(),
+        "x": m.time.isoformat() + "Z",
         "y": m.value
     } for m in metrics]
 
