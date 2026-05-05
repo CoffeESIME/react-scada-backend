@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 _topic_map: Dict[str, List[Tag]] = {}
 _active_client: Optional[aiomqtt.Client] = None
 
+# Controla cuándo fue la última escritura por tag_id para respetar el scan_rate_ms
+_last_saved: Dict[int, float] = {}
+
 async def load_topic_map():
     """Carga los tags MQTT externos desde la base de datos."""
     global _topic_map
@@ -188,7 +191,26 @@ async def _process_tag_value(tag: Tag, payload_str: str, parsed_data: Optional[d
                 except (ValueError, TypeError):
                     continue
         
-        # 3. Guardar en TimescaleDB
+        # 3. Respetar scan_rate_ms: limitar la frecuencia de escritura en BD
+        import time as _time
+        now = _time.monotonic()
+        scan_rate_ms = getattr(tag, 'scan_rate_ms', 1000) or 1000
+        min_interval = scan_rate_ms / 1000.0
+        last = _last_saved.get(tag.id, 0.0)
+        
+        if (now - last) < min_interval:
+            logger.debug(
+                f"[MQTT RATE] Tag '{tag.name}' omitido (intervalo={now-last:.3f}s < {min_interval:.3f}s)"
+            )
+            # Aún publicamos al topic interno para mantener el frontend actualizado en tiempo real
+            internal_topic = tag.mqtt_topic or f"scada/tags/{tag.name}"
+            payload = json.dumps({"tag_id": tag.id, "tag_name": tag.name, "value": value, "quality": "GOOD"})
+            await mqtt_client.publish(internal_topic, payload, qos=0)
+            return
+        
+        _last_saved[tag.id] = now
+        
+        # 3b. Guardar en TimescaleDB
         logger.info(f"[MQTT DEBUG] 💾 Guardando métrica: tag_id={tag.id}, value={value}")
         await save_metric(tag_id=tag.id, value=value)
         
