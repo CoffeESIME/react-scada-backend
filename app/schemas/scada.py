@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from app.db.models import AlarmSeverity, ProtocolType, ScreenAccessRole
 
-# ============ Tag Schemas ============
+
 
 class TagBase(BaseModel):
     """Campos base de un Tag."""
@@ -34,7 +34,7 @@ class TagRead(TagBase):
     class Config:
         from_attributes = True
 
-# ============ Metric Schemas ============
+
 
 class MetricBase(BaseModel):
     tag_id: int
@@ -52,8 +52,8 @@ class MetricRead(MetricBase):
     class Config:
         from_attributes = True
 
-# ============ Screen Schemas ============
-# Reemplaza la antigua lógica de Nodes/Edges individuales
+
+
 
 class ScreenBase(BaseModel):
     """Campos base de una pantalla SCADA."""
@@ -63,7 +63,7 @@ class ScreenBase(BaseModel):
 
 class ScreenCreate(ScreenBase):
     """Schema para crear una pantalla."""
-    # slug es opcional - se genera desde name si no se proporciona
+    
     slug: Optional[str] = Field(None, max_length=100)
     layout_data: Dict[str, Any] = Field(
         default_factory=lambda: {"nodes": [], "edges": []},
@@ -120,12 +120,12 @@ class ScreenShareResponse(BaseModel):
     class Config:
         from_attributes = True
 
-# ============ Alarm Schemas ============
+
 
 class AlarmDefinitionBase(BaseModel):
     severity: AlarmSeverity = AlarmSeverity.WARNING
     message: str
-    limits: Dict[str, float] = {} # Ej: {"HH": 90.0, "L": 10.0}
+    limits: Dict[str, float] = {} 
     deadband: float = 0.0
     is_active: bool = True
 

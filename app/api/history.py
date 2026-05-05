@@ -28,31 +28,31 @@ async def get_history(
     if not tag_id_list:
         return []
 
-    # Query tags to get names
+    
     tag_query = select(Tag).where(Tag.id.in_(tag_id_list))
     tag_result = await session.execute(tag_query)
     tags_map = {tag.id: tag.name for tag in tag_result.scalars().all()}
 
-    # Ensure start/end are timezone-aware (UTC) for correct comparison
-    # against timestamptz columns in TimescaleDB
+    
+    
     if start.tzinfo is None:
         start = start.replace(tzinfo=timezone.utc)
     if end.tzinfo is None:
         end = end.replace(tzinfo=timezone.utc)
 
-    # Query metrics
-    # Optimización: En TimescaleDB, siempre filtrar por tiempo primero.
+    
+    
     duration = end - start
     total_seconds = duration.total_seconds()
     
-    # Target max 1000 points per series to prevent browser freeze
+    
     max_points = 1000
     bucket_seconds = max(1, int(total_seconds / max_points))
 
     grouped_data = {tid: [] for tid in tag_id_list}
 
     if bucket_seconds > 1:
-        # Downsampling with time_bucket
+        
         time_bucket = func.time_bucket(timedelta(seconds=bucket_seconds), Metric.time).label("bucket")
         query = (
             select(
@@ -79,13 +79,13 @@ async def get_history(
                 else:
                     ts = ts.astimezone(timezone.utc)
                 
-                # Format to precision 4 for floats
+                
                 grouped_data[tag_id].append({
                     "x": ts.isoformat().replace("+00:00", "Z"),
                     "y": round(float(value), 4) if value is not None else 0
                 })
     else:
-        # Raw query for very small intervals (e.g. seconds)
+        
         query = (
             select(Metric)
             .where(Metric.time >= start)
@@ -99,7 +99,7 @@ async def get_history(
         
         for m in metrics:
             if m.tag_id in grouped_data:
-                # Ensure timestamp is always a valid UTC ISO-8601 string for the frontend.
+                
                 ts = m.time
                 if ts.tzinfo is None:
                     ts = ts.replace(tzinfo=timezone.utc)
@@ -132,7 +132,7 @@ async def get_latest_history(
     Fetch the latest N records for a specific tag.
     Returns data in chronological order (oldest to newest) for charting.
     """
-    # 1. Query latest records (descending time)
+    
     query = (
         select(Metric)
         .where(Metric.tag_id == tag_id)
@@ -143,11 +143,11 @@ async def get_latest_history(
     result = await session.execute(query)
     metrics = result.scalars().all()
     
-    # 2. Reverse to get chronological order (past -> present)
+    
     metrics = list(metrics)
     metrics.reverse()
     
-    # 3. Format result
+    
     data = [{
         "x": (m.time.astimezone(timezone.utc) if m.time.tzinfo else m.time.replace(tzinfo=timezone.utc)).isoformat().replace("+00:00", "Z"),
         "y": m.value

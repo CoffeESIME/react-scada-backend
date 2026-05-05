@@ -26,18 +26,18 @@ class ModbusDriver(IndustrialDriver):
     }
     """
     
-    # Cache de conexiones para reutilizar
+    
     _connections: Dict[str, ModbusClient] = {}
     
     def __init__(self, connection_config: Dict[str, Any]):
         super().__init__(connection_config)
-        # Soportar ambas claves: "ip" o "host"
+        
         self.ip = connection_config.get("ip") or connection_config.get("host")
         self.port = connection_config.get("port", 502)
         self.unit_id = connection_config.get("unit_id", 1)
         self.client: Optional[ModbusClient] = None
         
-        # Debug: mostrar configuración recibida
+        
         logger.info(f"[MODBUS] Config recibida: {connection_config}")
         logger.info(f"[MODBUS] IP: {self.ip}, Port: {self.port}, Unit: {self.unit_id}")
         
@@ -49,20 +49,20 @@ class ModbusDriver(IndustrialDriver):
 
     async def connect(self) -> bool:
         """Conecta al dispositivo Modbus TCP."""
-        # Validar que tenemos IP
+        
         if not self.ip or not isinstance(self.ip, str):
             logger.error(f"[MODBUS] IP inválida: {self.ip} (tipo: {type(self.ip)})")
             return False
         
         try:
-            # Reutilizar conexión existente si está abierta
+            
             if self._connection_key in ModbusDriver._connections:
                 self.client = ModbusDriver._connections[self._connection_key]
                 if self.client.is_open:
                     self.connected = True
                     return True
             
-            # Crear nueva conexión
+            
             self.client = ModbusClient(
                 host=self.ip,
                 port=self.port,
@@ -71,7 +71,7 @@ class ModbusDriver(IndustrialDriver):
                 timeout=3.0
             )
             
-            # Intentar abrir (pyModbusTCP es síncrono)
+            
             connected = await asyncio.to_thread(self.client.open)
             
             if connected:
@@ -91,11 +91,11 @@ class ModbusDriver(IndustrialDriver):
 
     async def disconnect(self):
         """Cierra la conexión Modbus."""
-        # No cerramos realmente para reutilizar, pero marcamos como desconectado
+        
         self.connected = False
-        # Si quisieras cerrar de verdad:
-        # if self.client and self.client.is_open:
-        #     self.client.close()
+        
+        
+        
 
     async def read_tag(self, tag_config: Dict[str, Any]) -> Any:
         """
@@ -144,7 +144,7 @@ class ModbusDriver(IndustrialDriver):
                 return None
             
             if result is not None:
-                # Retorna un solo valor si count=1, lista si count > 1
+                
                 if count == 1:
                     return result[0]
                 return result
@@ -180,12 +180,12 @@ class ModbusDriver(IndustrialDriver):
             success = False
             
             if reg_type == "holding":
-                # Escribir un solo registro (FC06)
+                
                 success = await asyncio.to_thread(
                     self.client.write_single_register, register, int(value)
                 )
             elif reg_type == "coil":
-                # Escribir un solo coil (FC05)
+                
                 success = await asyncio.to_thread(
                     self.client.write_single_coil, register, bool(value)
                 )

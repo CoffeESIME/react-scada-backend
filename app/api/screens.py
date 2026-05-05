@@ -64,7 +64,7 @@ async def list_screens(
     screens = result.scalars().all()
     
     responses = []
-    # Anotar rol para cada pantalla devuelta
+    
     for screen in screens:
         if screen.owner_id is None or screen.owner_id == user.id:
             role = "OWNER"
@@ -210,7 +210,7 @@ async def delete_screen(
     await session.commit()
     return None
 
-# ============ Compartir Pantallas ============
+
 
 @router.post("/{screen_id}/share", response_model=ScreenShareResponse)
 async def share_screen(
@@ -312,7 +312,7 @@ async def revoke_screen_share(
         await session.commit()
     return None
 
-# ============ Helper Functions ============
+
 
 async def _clear_current_home(
     session: AsyncSession, 

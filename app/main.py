@@ -5,7 +5,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-# Uvicorn se invoca desde el Dockerfile, pero lo importamos por si ejecutas manual
+
 import uvicorn 
 
 from app.core.config import settings
@@ -17,17 +17,17 @@ async def lifespan(app: FastAPI):
     """Lifecycle manager para startup y shutdown."""
     print(f"🚀 Starting {settings.app_name} in Docker...")
     
-    # 1. Inicializar DB
+    
     await init_db()
     print("✅ Database initialized")
     
-    # 2. Iniciar Motores
+    
     from app.services.engine import data_acquisition_loop
     from app.services.mqtt_listener import start_mqtt_listener
     from app.services.history import history_service
-    from app.core.mqtt_client import mqtt_client  # <--- IMPORTANTE
+    from app.core.mqtt_client import mqtt_client  
     
-    # Iniciar la conexión persistente TCP de subida (Publishing)
+    
     await mqtt_client.startup()
     print("✅ MQTT Publisher Client Started")
 
@@ -39,13 +39,13 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # --- SHUTDOWN ---
+    
     print("🛑 Shutting down...")
     
     data_task.cancel()
     listener_task.cancel()
     await history_service.stop()
-    await mqtt_client.shutdown()  # <--- Detener limpiamente
+    await mqtt_client.shutdown()  
     
     try:
         await asyncio.gather(data_task, listener_task, return_exceptions=True)
@@ -62,7 +62,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configurar CORS
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -71,7 +71,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Routers
+
 app.include_router(endpoints.router, prefix="/api")
 app.include_router(auth.router)
 app.include_router(tags.router, prefix="/api")

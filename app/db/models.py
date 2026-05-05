@@ -6,7 +6,7 @@ from sqlalchemy import JSON, PrimaryKeyConstraint, String as SAString
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP
 from fastapi_users.db import SQLAlchemyBaseUserTable
 
-# ============ Enums (Mantenemos los tuyos, son buenos) ============
+
 
 class AlarmSeverity(int, Enum):
     """Usamos Int para poder ordenar por gravedad (3 > 1)"""
@@ -25,7 +25,7 @@ class AlarmStatus(str, Enum):
     ACTIVE_ACK = "ACTIVE_ACK"
     CLEARED_UNACK = "CLEARED_UNACK" 
     CLEARED_ACK = "CLEARED_ACK"
-    RESOLVED = "RESOLVED" # Alias simple
+    RESOLVED = "RESOLVED" 
 
 class ScreenAccessRole(str, Enum):
     VIEWER = "VIEWER"
@@ -41,26 +41,26 @@ class AccessMode(str, Enum):
     WRITE = "W"
     READ_WRITE = "RW"
 
-# ============ User Model ============
+
 
 class User(SQLModel, table=True):
     __tablename__ = "users"
     
     id: Optional[int] = Field(default=None, primary_key=True)
     
-    # --- FastAPI Users Required Fields ---
+    
     email: str = Field(unique=True, index=True, max_length=320)
     hashed_password: str = Field(max_length=1024)
     is_active: bool = Field(default=True)
     is_superuser: bool = Field(default=False)
     is_verified: bool = Field(default=False)
     
-    # --- Custom Fields ---
+    
     username: str = Field(unique=True, index=True)
-    role: str = Field(default="OPERATOR") # ADMIN, OPERATOR
+    role: str = Field(default="OPERATOR") 
     full_name: Optional[str] = None
 
-# ============ SCADA Core Models ============
+
 
 class Tag(SQLModel, table=True):
     """
@@ -70,22 +70,22 @@ class Tag(SQLModel, table=True):
     __tablename__ = "tags"
     
     id: Optional[int] = Field(default=None, primary_key=True)
-    name: str = Field(unique=True, index=True) # Ej: "Tanque1_Nivel"
+    name: str = Field(unique=True, index=True) 
     description: Optional[str] = None
     unit: Optional[str] = None
     
-    # --- Configuración del Protocol Factory ---
+    
     source_protocol: ProtocolType = Field(default=ProtocolType.SIMULATED)
     
-    # Guardamos la config compleja (IP, Reg, NodeID) en JSON
+    
     connection_config: Dict = Field(default={}, sa_column=Column(JSONB)) 
     
-    scan_rate_ms: int = Field(default=1000) # Frecuencia de lectura
-    mqtt_topic: str # Topic normalizado: "scada/tags/tanque1"
+    scan_rate_ms: int = Field(default=1000) 
+    mqtt_topic: str 
     
     is_enabled: bool = Field(default=True)
     
-    # Signal metadata — stored as plain VARCHAR to avoid PostgreSQL native enum type conflicts
+    
     data_type: str = Field(
         default="float",
         sa_column=Column(SAString, nullable=False, server_default="float")
@@ -95,10 +95,10 @@ class Tag(SQLModel, table=True):
         sa_column=Column(SAString, nullable=False, server_default="R")
     )
     
-    # Ownership
+    
     owner_id: Optional[int] = Field(default=None, foreign_key="users.id")
     
-    # Relaciones
+    
     metrics: List["Metric"] = Relationship(back_populates="tag")
     alarm_definition: Optional["AlarmDefinition"] = Relationship(back_populates="tag")
 
@@ -118,7 +118,7 @@ class Metric(SQLModel, table=True):
     )
     tag_id: int = Field(foreign_key="tags.id")
     value: float
-    quality: int = Field(default=192) # OPC UA Good
+    quality: int = Field(default=192) 
 
     tag: Optional[Tag] = Relationship(back_populates="metrics")
 
@@ -132,15 +132,15 @@ class Screen(SQLModel, table=True):
     
     id: Optional[int] = Field(default=None, primary_key=True)
     name: str = Field(unique=True)
-    slug: str = Field(unique=True, index=True) # Para la URL /screen/main
+    slug: str = Field(unique=True, index=True) 
     description: Optional[str] = None
     
-    # Aquí vive todo el grafo de React Flow
+    
     layout_data: Dict = Field(default={}, sa_column=Column(JSONB)) 
     
     is_home: bool = Field(default=False)
     
-    # Ownership
+    
     owner_id: Optional[int] = Field(default=None, foreign_key="users.id")
 
 class ScreenAccess(SQLModel, table=True):
@@ -155,7 +155,7 @@ class ScreenAccess(SQLModel, table=True):
     role: ScreenAccessRole = Field(default=ScreenAccessRole.VIEWER)
 
 
-# ============ Alarm Models ============
+
 
 class AlarmDefinition(SQLModel, table=True):
     __tablename__ = "alarm_definitions"
@@ -166,7 +166,7 @@ class AlarmDefinition(SQLModel, table=True):
     severity: AlarmSeverity = Field(default=AlarmSeverity.WARNING)
     message: str
     
-    # Umbrales: {"HH": 90, "L": 10}
+    
     limits: Dict = Field(default={}, sa_column=Column(JSONB))
     deadband: float = Field(default=0.0)
     
@@ -189,6 +189,6 @@ class AlarmEvent(SQLModel, table=True):
     ack_user_id: Optional[int] = Field(default=None, foreign_key="users.id")
     
     trigger_value: float
-    status: str = Field(default="ACTIVE_UNACK") # Enum controlado por lógica
+    status: str = Field(default="ACTIVE_UNACK") 
     
     definition: Optional[AlarmDefinition] = Relationship(back_populates="events")

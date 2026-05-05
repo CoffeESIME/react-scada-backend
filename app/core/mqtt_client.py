@@ -23,9 +23,9 @@ from app.core.config import DeploymentEnv, Settings, get_settings
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
+
+
+
 
 def _build_tls_context(cfg: Settings) -> Optional[ssl.SSLContext]:
     """
@@ -43,12 +43,12 @@ def _build_tls_context(cfg: Settings) -> Optional[ssl.SSLContext]:
     ctx.check_hostname = True
     ctx.verify_mode = ssl.CERT_REQUIRED
 
-    # Cargar CA personalizada (obligatorio en mTLS)
+    
     if cfg.mqtt_ca_cert:
         ctx.load_verify_locations(cafile=str(cfg.mqtt_ca_cert))
         logger.debug("TLS: CA cargada desde %s", cfg.mqtt_ca_cert)
 
-    # Cargar certificado + clave del cliente (mTLS bidireccional)
+    
     if cfg.mqtt_client_cert and cfg.mqtt_client_key:
         ctx.load_cert_chain(
             certfile=str(cfg.mqtt_client_cert),
@@ -61,9 +61,9 @@ def _build_tls_context(cfg: Settings) -> Optional[ssl.SSLContext]:
     return ctx
 
 
-# ---------------------------------------------------------------------------
-# Singleton
-# ---------------------------------------------------------------------------
+
+
+
 
 class MQTTClient:
     """
@@ -81,9 +81,9 @@ class MQTTClient:
 
     _instance: Optional["MQTTClient"] = None
 
-    # -------------------------------------------------------------------------
-    # Singleton pattern
-    # -------------------------------------------------------------------------
+    
+    
+    
 
     def __new__(cls) -> "MQTTClient":
         if cls._instance is None:
@@ -92,17 +92,17 @@ class MQTTClient:
         return cls._instance
 
     def __init__(self) -> None:
-        if self._initialized:  # type: ignore[has-type]
+        if self._initialized:  
             return
         self._initialized = True
 
         self._cfg: Settings = get_settings()
         self._tls_context: Optional[ssl.SSLContext] = _build_tls_context(self._cfg)
 
-        # Estado interno
+        
         self._client: Optional[aiomqtt.Client] = None
         self._connected: bool = False
-        self._task: Optional[asyncio.Task] = None  # background task
+        self._task: Optional[asyncio.Task] = None  
         self._publish_queue: asyncio.Queue = asyncio.Queue(maxsize=1_000)
 
         logger.info(
@@ -113,9 +113,9 @@ class MQTTClient:
             self._cfg.mqtt_use_tls,
         )
 
-    # -------------------------------------------------------------------------
-    # Lifecycle (llamar desde FastAPI lifespan)
-    # -------------------------------------------------------------------------
+    
+    
+    
 
     async def startup(self) -> None:
         """Inicia el loop de conexión persistente en segundo plano."""
@@ -138,9 +138,9 @@ class MQTTClient:
         self._connected = False
         logger.info("MQTTClient detenido limpiamente.")
 
-    # -------------------------------------------------------------------------
-    # Background connection loop
-    # -------------------------------------------------------------------------
+    
+    
+    
 
     async def _connection_loop(self) -> None:
         """
@@ -165,7 +165,7 @@ class MQTTClient:
                     username=self._cfg.mqtt_username,
                     password=self._cfg.mqtt_password,
                     keepalive=self._cfg.mqtt_keepalive,
-                    tls_context=self._tls_context,  # None → sin TLS
+                    tls_context=self._tls_context,  
                 ) as client:
                     self._client = client
                     self._connected = True
@@ -174,7 +174,7 @@ class MQTTClient:
                         self._cfg.deployment_env.value,
                     )
 
-                    # Drena la cola de publicaciones pendientes mientras hay conexión
+                    
                     await self._drain_publish_queue()
 
             except asyncio.CancelledError:
@@ -187,7 +187,7 @@ class MQTTClient:
                     "Error MQTT: %s — reintentando en %.1fs", exc, delay
                 )
                 await asyncio.sleep(delay)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  
                 self._connected = False
                 self._client = None
                 logger.exception("Error inesperado en connection loop: %s", exc)
@@ -206,7 +206,7 @@ class MQTTClient:
         """
         while self._connected and self._client is not None:
             try:
-                # Espera un mensaje con timeout para poder detectar desconexiones
+                
                 topic, payload, qos, retain = await asyncio.wait_for(
                     self._publish_queue.get(), timeout=1.0
                 )
@@ -214,17 +214,17 @@ class MQTTClient:
                 self._publish_queue.task_done()
                 logger.debug("Published → %s (qos=%s)", topic, qos)
             except asyncio.TimeoutError:
-                # Sin mensajes pendientes — loop normal
+                
                 continue
             except aiomqtt.MqttError:
-                # Re-lanzar para que _connection_loop maneje la reconexión
+                
                 raise
             except asyncio.CancelledError:
                 break
 
-    # -------------------------------------------------------------------------
-    # API pública de publicación
-    # -------------------------------------------------------------------------
+    
+    
+    
 
     async def publish(
         self,
@@ -249,7 +249,7 @@ class MQTTClient:
         """
         if not self._connected:
             logger.warning("publish() llamado pero MQTT no está conectado. [topic=%s]", topic)
-            # Intentamos encolar de todas formas — se enviará al reconectar
+            
         try:
             self._publish_queue.put_nowait((topic, payload, qos, retain))
             return True
@@ -305,9 +305,9 @@ class MQTTClient:
         topic = f"scada/commands/{device_id}"
         return await self.publish(topic, payload)
 
-    # -------------------------------------------------------------------------
-    # Diagnóstico
-    # -------------------------------------------------------------------------
+    
+    
+    
 
     @property
     def is_connected(self) -> bool:
@@ -322,7 +322,7 @@ class MQTTClient:
         )
 
 
-# ---------------------------------------------------------------------------
-# Singleton global — importar desde aquí en el resto del proyecto
-# ---------------------------------------------------------------------------
+
+
+
 mqtt_client = MQTTClient()

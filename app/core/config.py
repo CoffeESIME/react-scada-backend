@@ -15,9 +15,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class DeploymentEnv(str, Enum):
     """Entornos de despliegue soportados."""
-    VPS_LOCAL   = "vps_local"    # Mismo host que Mosquitto → 127.0.0.1:1883, sin TLS
-    EDGE_PLANTA = "edge_planta"  # Gateway industrial → VPS remoto:8884, mTLS estricto
-    DEVELOPMENT = "development"  # Docker local → localhost:1883, sin TLS
+    VPS_LOCAL   = "vps_local"    
+    EDGE_PLANTA = "edge_planta"  
+    DEVELOPMENT = "development"  
 
 
 class Settings(BaseSettings):
@@ -35,19 +35,19 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # =========================================================================
-    # App
-    # =========================================================================
+    
+    
+    
     app_name: str = "SCADA Backend"
     debug: bool = False
     api_v1_prefix: str = "/api/v1"
 
-    # Entorno activo — controla el comportamiento de TLS y logging
+    
     deployment_env: DeploymentEnv = DeploymentEnv.DEVELOPMENT
 
-    # =========================================================================
-    # Database (TimescaleDB / PostgreSQL)
-    # =========================================================================
+    
+    
+    
     postgres_user: str = "admin"
     postgres_password: str = "admin_scada_secret"
     postgres_host: str = "localhost"
@@ -70,52 +70,52 @@ class Settings(BaseSettings):
             f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
         )
 
-    # =========================================================================
-    # MQTT (Mosquitto) — Core
-    # =========================================================================
+    
+    
+    
     mqtt_broker_host: str = "localhost"
     mqtt_broker_port: int = 1883
     mqtt_client_id: str = "scada-backend"
 
-    # Credenciales opcionales (solo requeridas según el listener de Mosquitto)
+    
     mqtt_username: Optional[str] = None
     mqtt_password: Optional[str] = None
 
-    # Tiempos de operación
-    mqtt_keepalive: int = 60          # segundos entre PINGs al broker
-    mqtt_reconnect_delay: float = 5.0  # segundos entre intentos de reconexión
+    
+    mqtt_keepalive: int = 60          
+    mqtt_reconnect_delay: float = 5.0  
 
-    # =========================================================================
-    # MQTT — TLS / mTLS
-    # =========================================================================
-    # Activa el cifrado TLS. Obligatorio en edge_planta; ignorado en vps_local/development.
+    
+    
+    
+    
     mqtt_use_tls: bool = False
 
-    # --- Certificados (rutas al sistema de archivos del host) ---
-    # CA que firmó el certificado del servidor Mosquitto.
+    
+    
     mqtt_ca_cert: Optional[Path] = None
 
-    # Certificado de cliente (mTLS) — requerido en edge_planta.
+    
     mqtt_client_cert: Optional[Path] = None
 
-    # Clave privada del cliente (mTLS) — requerido en edge_planta.
+    
     mqtt_client_key: Optional[Path] = None
 
-    # =========================================================================
-    # Seguridad (JWT)
-    # =========================================================================
+    
+    
+    
     secret_key: str = "CHANGE_THIS_SECRET_KEY_IN_PRODUCTION"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
 
-    # =========================================================================
-    # CORS
-    # =========================================================================
+    
+    
+    
     cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
 
-    # =========================================================================
-    # Validadores
-    # =========================================================================
+    
+    
+    
 
     @field_validator("mqtt_ca_cert", "mqtt_client_cert", "mqtt_client_key", mode="before")
     @classmethod
@@ -132,7 +132,7 @@ class Settings(BaseSettings):
         y que edge_planta nunca arranque sin mTLS (fail-fast en producción).
         """
         if self.deployment_env == DeploymentEnv.EDGE_PLANTA:
-            # En planta, mTLS es obligatorio — forzar la bandera
+            
             object.__setattr__(self, "mqtt_use_tls", True)
 
             missing: list[str] = []
@@ -168,5 +168,5 @@ def get_settings() -> Settings:
     return Settings()
 
 
-# Singleton para importación directa en módulos internos
+
 settings = get_settings()

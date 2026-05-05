@@ -18,7 +18,7 @@ from app.db.models import User
 from app.db.session import get_session
 
 
-# User Manager
+
 class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
     """Manager personalizado para usuarios."""
     
@@ -38,7 +38,7 @@ class UserManager(IntegerIDMixin, BaseUserManager[User, int]):
         print(f"User {user.id} has forgot their password. Token: {token}")
 
 
-# Dependencia para obtener el User DB
+
 async def get_user_db(session=Depends(get_session)):
     """Retorna la base de datos de usuarios."""
     yield SQLAlchemyUserDatabase(session, User)
@@ -49,7 +49,7 @@ async def get_user_manager(user_db=Depends(get_user_db)):
     yield UserManager(user_db)
 
 
-# Configuración de autenticación JWT
+
 bearer_transport = BearerTransport(tokenUrl="auth/jwt/login")
 
 
@@ -67,13 +67,13 @@ auth_backend = AuthenticationBackend(
     get_strategy=get_jwt_strategy,
 )
 
-# FastAPI Users instance
+
 fastapi_users = FastAPIUsers[User, int](
     get_user_manager,
     [auth_backend],
 )
 
-# Dependencias comunes
+
 current_active_user = fastapi_users.current_user(active=True)
 current_superuser = fastapi_users.current_user(active=True, superuser=True)
 

@@ -39,9 +39,9 @@ class MqttBridge(IndustrialDriver):
         self._qos: int = int(connection_config.get("qos", 1))
         self._retain: bool = bool(connection_config.get("retain", False))
 
-    # ------------------------------------------------------------------
-    # Lifecycle — MQTT usa la conexión singleton, no abre/cierra TCP aquí
-    # ------------------------------------------------------------------
+    
+    
+    
 
     async def connect(self) -> bool:
         """
@@ -64,9 +64,9 @@ class MqttBridge(IndustrialDriver):
         """No-op: la conexión es compartida con el resto del backend."""
         self.connected = False
 
-    # ------------------------------------------------------------------
-    # Write
-    # ------------------------------------------------------------------
+    
+    
+    
 
     async def write_tag(self, tag_config: Dict[str, Any], value: Any) -> bool:
         """
@@ -95,7 +95,7 @@ class MqttBridge(IndustrialDriver):
         if json_key:
             payload = json.dumps({json_key: value})
         else:
-            # Payload raw — el dispositivo lo recibe como string simple
+            
             payload = json.dumps(value) if not isinstance(value, str) else value
 
         logger.info(
@@ -110,9 +110,9 @@ class MqttBridge(IndustrialDriver):
 
         return success
 
-    # ------------------------------------------------------------------
-    # Read (one-shot con timeout)
-    # ------------------------------------------------------------------
+    
+    
+    
 
     async def read_tag(self, tag_config: Dict[str, Any]) -> Any:
         """
@@ -138,7 +138,7 @@ class MqttBridge(IndustrialDriver):
 
             cfg = get_settings()
 
-            # Abre una conexión efímera sólo para esta lectura
+            
             async with aiomqtt.Client(
                 hostname=cfg.mqtt_broker_host,
                 port=cfg.mqtt_broker_port,
@@ -153,14 +153,14 @@ class MqttBridge(IndustrialDriver):
                         if isinstance(raw, bytes):
                             raw = raw.decode("utf-8", errors="replace")
 
-                        # Intenta parsear como JSON
+                        
                         try:
                             parsed = json.loads(raw)
                             if json_key and isinstance(parsed, dict):
                                 return parsed.get(json_key)
                             return parsed
                         except (json.JSONDecodeError, TypeError):
-                            # Payload plano (string/número)
+                            
                             try:
                                 return float(raw)
                             except ValueError:

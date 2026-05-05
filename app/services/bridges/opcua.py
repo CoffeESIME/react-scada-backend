@@ -11,7 +11,7 @@ class OpcUaDriver(IndustrialDriver):
         super().__init__(connection_config)
         self.url = connection_config.get("url", "opc.tcp://localhost:4840")
         self.client = Client(url=self.url)
-        # Mantener referencia al nodo si es posible, pero por simplicidad resolveremos cada vez
+        
 
     async def connect(self) -> bool:
         try:
@@ -32,7 +32,7 @@ class OpcUaDriver(IndustrialDriver):
             self.connected = False
 
     async def read_tag(self, tag_config: Dict[str, Any]) -> Any:
-        # tag_config debe contener 'node_id', ej: "ns=2;i=2"
+        
         if not self.connected:
             await self.connect()
             
@@ -46,7 +46,7 @@ class OpcUaDriver(IndustrialDriver):
             return value
         except Exception as e:
             print(f"Error OPC UA Read: {e}")
-            # Intentar reconectar una vez si falla
+            
             await self.disconnect()
             return None
 
@@ -60,9 +60,9 @@ class OpcUaDriver(IndustrialDriver):
             
         try:
             node = self.client.get_node(node_id)
-            # asyncua requiere que el tipo coincida exactamente, aquí asumimos inferencia automática
-            # o que 'value' ya viene con el tipo correcto (float, int, bool)
-            # En producción, habría que usar ua.Variant(value, ua.VariantType.Float) etc.
+            
+            
+            
             await node.write_value(value)
             return True
         except Exception as e:

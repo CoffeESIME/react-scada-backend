@@ -20,13 +20,13 @@ class ProtocolFactory:
             protocol_type: "modbus", "opcua", "simulated", "mqtt", etc.
             connection_config: Diccionario con la configuración de conexión del tag.
         """
-        # Si es un Enum, obtenemos su valor ("modbus", "opcua", etc.)
+        
         if hasattr(protocol_type, "value"):
             p_type = str(protocol_type.value).lower()
         else:
             p_type = str(protocol_type).lower()
             
-        # Limpieza extra en caso de que venga como "ProtocolType.MODBUS"
+        
         if "protocoltype." in p_type:
             p_type = p_type.split(".")[-1]
         

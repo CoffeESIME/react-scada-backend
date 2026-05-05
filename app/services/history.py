@@ -30,9 +30,9 @@ class HistoryService:
     def __init__(self):
         self._running = False
         self._task: Optional[asyncio.Task] = None
-        # Topics internos donde engine.py y mqtt_listener.py publican datos normalizados
+        
         self._topics = ["scada/tags/#"] 
-        # Cache: MQTT Topic -> Tag ID
+        
         self._topic_map: Dict[str, int] = {}
     
     async def start(self) -> None:
@@ -66,7 +66,7 @@ class HistoryService:
         """Loop principal de suscripción MQTT."""
         while self._running:
             try:
-                # Si el mapa está vacío, intentamos recargar (ej: inicio rápido)
+                
                 if not self._topic_map:
                     await self._load_topic_map()
                 
@@ -79,12 +79,12 @@ class HistoryService:
                     tls_context=_build_tls_context(settings)
                 ) as client:
                     
-                    # Suscribirse al wildcard de tags
+                    
                     for topic in self._topics:
                         await client.subscribe(topic)
                         logger.info(f"History subscribed to: {topic}")
                     
-                    # Procesar mensajes
+                    
                     async for message in client.messages:
                         await self._process_message(message)
                         
@@ -102,29 +102,29 @@ class HistoryService:
         try:
             topic = str(message.topic)
             
-            # Buscar ID del tag
-            # Si no está en el mapa, puede ser nuevo o no configurado
+            
+            
             tag_id = self._topic_map.get(topic)
             if not tag_id:
-                # Opcional: Intentar recargar mapa si es desconocido? 
-                # Por ahora ignoramos para rendimiento
-                return # No gestionado
+                
+                
+                return 
             
             payload = message.payload.decode()
             
-            # Parsear valor JSON estandarizado
+            
             try:
                 data = json.loads(payload)
-                # Formato esperado: {"value": 123, "quality": "GOOD", ...}
-                value = float(data.get("value", 0.0))
-                # quality puede venir como string "GOOD" o int. save_metric espera int normalmente,
-                # pero app/services/storage.py define save_metric(tag_id, value, quality=192).
-                # Revisemos si save_metric maneja timestamp.
                 
-                # Asumimos que viene el timestamp o usamos now.
-                # Nota: save_metric generalmente usa datetime.utcnow() internamente si no se pasa.
-                # Pero storage.py simple solo acepta (tag_id, value). Verifiquemos eso luego. 
-                # Vamos a usar save_metric tal cual está en mqtt_listener.py
+                value = float(data.get("value", 0.0))
+                
+                
+                
+                
+                
+                
+                
+                
                 
                 await save_metric(tag_id=tag_id, value=value)
                 
@@ -135,5 +135,5 @@ class HistoryService:
             logger.error(f"Error processing history message: {e}")
 
 
-# Instancia global
+
 history_service = HistoryService()

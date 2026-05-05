@@ -9,7 +9,7 @@ import re
 from app.db.models import ProtocolType, AlarmSeverity
 
 
-# ============ Connection Config Schemas (Submodelos) ============
+
 
 class ModbusConfig(BaseModel):
     """Config requerida para protocolo Modbus."""
@@ -47,7 +47,7 @@ class SimulatedConfig(BaseModel):
     max: float = Field(default=100.0)
 
 
-# ============ Alarm Embedded Schema ============
+
 
 class AlarmDefinitionEmbedded(BaseModel):
     """Alarma embebida para crear junto con el Tag."""
@@ -61,7 +61,7 @@ class AlarmDefinitionEmbedded(BaseModel):
     is_active: bool = True
 
 
-# ============ Tag Create/Update Schemas ============
+
 
 class TagCreate(BaseModel):
     """Schema para crear un Tag con validación polimórfica."""
@@ -80,7 +80,7 @@ class TagCreate(BaseModel):
     data_type: Literal['boolean', 'integer', 'float'] = 'float'
     access_mode: Literal['R', 'W', 'RW'] = 'R'
     
-    # Alarma opcional embebida
+    
     alarm: Optional[AlarmDefinitionEmbedded] = None
     
     @model_validator(mode="after")
@@ -107,7 +107,7 @@ class TagCreate(BaseModel):
     def generate_mqtt_topic(self):
         """Genera mqtt_topic automáticamente si no se proporciona."""
         if not self.mqtt_topic:
-            # Normalizar nombre: lowercase, reemplazar espacios con _
+            
             normalized = re.sub(r'[^a-zA-Z0-9_]', '_', self.name.lower())
             self.mqtt_topic = f"scada/tags/{normalized}"
         return self
@@ -130,7 +130,7 @@ class TagUpdate(BaseModel):
     data_type: Optional[Literal['boolean', 'integer', 'float']] = None
     access_mode: Optional[Literal['R', 'W', 'RW']] = None
     
-    # Alarma opcional para actualizar/crear
+    
     alarm: Optional[AlarmDefinitionEmbedded] = None
     
     @model_validator(mode="after")
@@ -152,14 +152,14 @@ class TagUpdate(BaseModel):
 
 
 
-# ============ Tag Write Schema ============
+
 
 class TagWrite(BaseModel):
     """Schema para escribir un valor en un Tag."""
     value: Any = Field(..., description="Valor a escribir en el tag")
 
 
-# ============ Tag Read Schemas ============
+
 
 class AlarmDefinitionRead(BaseModel):
     """Schema de respuesta para AlarmDefinition."""
@@ -193,7 +193,7 @@ class TagRead(BaseModel):
     access_mode: str = 'R'
     owner_id: Optional[int] = None
     
-    # Alarma relacionada (puede ser None)
+    
     alarm_definition: Optional[AlarmDefinitionRead] = None
 
 
