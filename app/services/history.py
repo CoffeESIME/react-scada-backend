@@ -1,22 +1,23 @@
 """
-Servicio de Historial: Suscriptor MQTT -> TimescaleDB.
-Persiste datos de tiempo real en la base de datos.
+Servicio de Historial: Suscriptor MQTT - Bus interno de monitoreo.
+
+NOTA: Este servicio YA NO persiste en DB directamente.
+La persistencia la realizan engine.py (Modbus/Simulated) y
+mqtt_listener.py (MQTT externos). Este servicio queda disponible
+para auditoría, reenvío o futura lógica sobre el bus interno.
 """
 import asyncio
 import json
 import logging
-from datetime import datetime
 from typing import Optional, Dict
 
 import aiomqtt
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.mqtt_client import _build_tls_context
 from app.db.session import async_session_factory
-from app.db.models import Metric, Tag
-from app.services.storage import save_metric
+from app.db.models import Tag
 
 logger = logging.getLogger(__name__)
 
@@ -98,39 +99,28 @@ class HistoryService:
                 await asyncio.sleep(5)
     
     async def _process_message(self, message) -> None:
-        """Procesa un mensaje MQTT y lo guarda en la DB."""
+        """Procesa un mensaje MQTT del bus interno.
+        
+        La persistencia en DB ya fue realizada por engine.py o mqtt_listener.py.
+        Este método solo registra el evento en el log de debug para trazabilidad.
+        """
         try:
             topic = str(message.topic)
-            
-            
-            
             tag_id = self._topic_map.get(topic)
             if not tag_id:
-                
-                
-                return 
-            
+                return
+
             payload = message.payload.decode()
-            
-            
             try:
                 data = json.loads(payload)
-                
                 value = float(data.get("value", 0.0))
-                
-                
-                
-                
-                
-                
-                
-                
-                
-                await save_metric(tag_id=tag_id, value=value)
-                
+                logger.debug(
+                    f"[HISTORY BUS] tag_id={tag_id} topic={topic} value={value:.4f} "
+                    f"(persistencia ya realizada por engine/listener)"
+                )
             except (json.JSONDecodeError, ValueError):
                 logger.warning(f"Invalid payload for topic {topic}: {payload}")
-            
+
         except Exception as e:
             logger.error(f"Error processing history message: {e}")
 
