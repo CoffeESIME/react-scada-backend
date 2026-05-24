@@ -22,7 +22,6 @@ async def lifespan(app: FastAPI):
     print("✅ Database initialized")
     
     
-    from app.services.engine import data_acquisition_loop
     from app.services.mqtt_listener import start_mqtt_listener
     from app.services.history import history_service
     from app.core.mqtt_client import mqtt_client  
@@ -31,24 +30,22 @@ async def lifespan(app: FastAPI):
     await mqtt_client.startup()
     print("✅ MQTT Publisher Client Started")
 
-    data_task = asyncio.create_task(data_acquisition_loop())
     listener_task = asyncio.create_task(start_mqtt_listener())
     await history_service.start()
     
-    print("✅ Background Services Started (Poller, Listener & History)")
+    print("✅ Background Services Started (MQTT Listener & History)")
     
     yield
     
     
     print("🛑 Shutting down...")
     
-    data_task.cancel()
     listener_task.cancel()
     await history_service.stop()
     await mqtt_client.shutdown()  
     
     try:
-        await asyncio.gather(data_task, listener_task, return_exceptions=True)
+        await asyncio.gather(listener_task, return_exceptions=True)
     except Exception as e:
         print(f"⚠️ Error stopping services: {e}")
             
