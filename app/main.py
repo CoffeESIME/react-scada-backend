@@ -10,7 +10,7 @@ import uvicorn
 
 from app.core.config import settings
 from app.db.session import init_db
-from app.api import endpoints, auth, tags, screens, history
+from app.api import endpoints, auth, tags, screens, history, alarms
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -74,6 +74,7 @@ app.include_router(auth.router)
 app.include_router(tags.router, prefix="/api")
 app.include_router(screens.router, prefix="/api")
 app.include_router(history.router, prefix="/api")
+app.include_router(alarms.router, prefix="/api")
 
 @app.get("/")
 async def root():

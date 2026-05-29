@@ -69,14 +69,22 @@ async def _provision_tag_to_edge(tag: Tag) -> None:
     Se llama después de cada CREATE o UPDATE en la API REST.
     Es fire-and-forget: si falla el publish, se registra el error pero no
     revierte la transacción de BD (el reintento vendrá del reload periódico del Edge).
+
+    Publica en DOS tópicos para garantizar entrega:
+      1. scada/edge/config/upsert          → Broadcast: todos los Edges lo reciben.
+      2. scada/edge/+/config/upsert        → No se puede publicar en wildcard.
+
+    Nota: el Edge se suscribe a scada/edge/{EDGE_ID}/config/upsert (específico)
+    Y también a scada/edge/config/upsert (broadcast) — ver _listener_task en edge_engine.py.
     """
-    topic = "scada/edge/config/upsert"
+    # Tópico broadcast: todos los Edges reciben la actualización.
+    broadcast_topic = "scada/edge/config/upsert"
     try:
         payload = _build_edge_tag_payload(tag)
-        await mqtt_client.publish(topic, payload, qos=1)
+        await mqtt_client.publish(broadcast_topic, payload, qos=1)
         logger.info(
-            "[TAGS] Tag '%s' (id=%d) aprovisionado al Edge → %s",
-            tag.name, tag.id, topic,
+            "[TAGS] Tag '%s' (id=%d) aprovisionado → %s",
+            tag.name, tag.id, broadcast_topic,
         )
     except Exception as exc:
         logger.error(
@@ -202,6 +210,75 @@ async def get_tag(
     if tag.owner_id is not None and tag.owner_id != user.id:
         raise HTTPException(status_code=403, detail="No tienes acceso a este tag")
     return tag
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# POST /tags/{tag_id}/reprovision — Re-publicar config de un tag al Edge
+# ──────────────────────────────────────────────────────────────────────────────
+
+@router.post("/{tag_id}/reprovision", status_code=200)
+async def reprovision_tag(
+    tag_id: int,
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_admin_user),
+):
+    """
+    Re-publica la configuración de un tag existente al tópico MQTT de aprovisionamiento.
+
+    Útil cuando:
+      - El Edge se reinició y su SQLite quedó vacío.
+      - Hubo un error de entrega en el publish original.
+      - Se necesita forzar la sincronización sin modificar el tag.
+    """
+    result = await session.execute(select(Tag).where(Tag.id == tag_id))
+    tag = result.scalar_one_or_none()
+    if not tag:
+        raise HTTPException(status_code=404, detail="Tag no encontrado")
+
+    await _provision_tag_to_edge(tag)
+    return {
+        "status": "published",
+        "tag_id": tag.id,
+        "tag_name": tag.name,
+        "topic": "scada/edge/config/upsert",
+    }
+
+
+@router.post("/reprovision/all", status_code=200)
+async def reprovision_all_tags(
+    session: AsyncSession = Depends(get_session),
+    user: User = Depends(current_admin_user),
+):
+    """
+    Re-publica TODOS los tags activos al tópico de aprovisionamiento del Edge.
+
+    Útil como operación de sincronización masiva después de un reinicio del Edge
+    o para poblar un nuevo nodo Edge con la configuración actual del sistema.
+    """
+    result = await session.execute(
+        select(Tag).where(Tag.is_enabled == True).order_by(Tag.id)
+    )
+    tags = result.scalars().all()
+
+    published = []
+    failed = []
+    for tag in tags:
+        try:
+            await _provision_tag_to_edge(tag)
+            published.append({"tag_id": tag.id, "tag_name": tag.name})
+        except Exception as exc:
+            failed.append({"tag_id": tag.id, "tag_name": tag.name, "error": str(exc)})
+
+    return {
+        "status": "completed",
+        "published_count": len(published),
+        "failed_count": len(failed),
+        "published": published,
+        "failed": failed,
+        "topic": "scada/edge/config/upsert",
+    }
+
+
 
 
 # ──────────────────────────────────────────────────────────────────────────────
