@@ -56,6 +56,7 @@ TOPIC_ALARMS = "scada/alarms/#"
 # en cada mensaje. Se recarga cada CACHE_RELOAD_S segundos.
 _tag_cache: Dict[int, Tag] = {}
 _tag_name_cache: Dict[str, Tag] = {}  # Índice alternativo por nombre
+_external_topics_cache: Dict[str, List[Tag]] = {} # Tópicos externos crudos
 CACHE_RELOAD_S = 60
 
 
@@ -65,7 +66,7 @@ CACHE_RELOAD_S = 60
 
 async def _load_tag_cache() -> None:
     """Carga todos los tags activos de la BD en memoria para lookups O(1)."""
-    global _tag_cache, _tag_name_cache
+    global _tag_cache, _tag_name_cache, _external_topics_cache
     try:
         async with async_session_factory() as session:
             stmt = (
@@ -78,7 +79,19 @@ async def _load_tag_cache() -> None:
 
         _tag_cache = {t.id: t for t in tags}
         _tag_name_cache = {t.name: t for t in tags}
-        logger.info("[LISTENER] Caché de tags cargada: %d tags activos.", len(tags))
+        
+        # Construir caché de tópicos externos (Protocolo MQTT)
+        new_external_topics = {}
+        for t in tags:
+            if t.source_protocol == ProtocolType.MQTT and t.connection_config:
+                ext_topic = t.connection_config.get("topic")
+                if ext_topic:
+                    if ext_topic not in new_external_topics:
+                        new_external_topics[ext_topic] = []
+                    new_external_topics[ext_topic].append(t)
+        _external_topics_cache = new_external_topics
+        
+        logger.info("[LISTENER] Caché de tags cargada: %d tags activos. %d tópicos externos.", len(tags), len(_external_topics_cache))
     except Exception as exc:
         logger.error("[LISTENER] Error cargando caché de tags: %s", exc)
 
@@ -219,6 +232,75 @@ async def _process_tag_message(topic: str, payload_str: str) -> None:
             logger.error("[LISTENER] Error en alarm_engine para tag '%s': %s", tag_name, exc)
 
 
+async def _process_external_message(topic: str, payload_str: str) -> None:
+    """
+    Procesa un mensaje de telemetría entrante desde un dispositivo MQTT externo.
+    Extrae el valor utilizando la llave JSON configurada en el Tag.
+    """
+    tags = _external_topics_cache.get(topic)
+    if not tags:
+        return
+
+    try:
+        payload = json.loads(payload_str)
+    except json.JSONDecodeError:
+        logger.error("[LISTENER] Payload no es JSON válido en tópico externo '%s': %s", topic, payload_str[:100])
+        return
+
+    for tag in tags:
+        # Por defecto buscamos la llave "value", pero respetamos la configurada por el usuario
+        json_key = tag.connection_config.get("json_key", "value")
+        
+        raw_value = payload.get(json_key)
+        if raw_value is None:
+            # El payload podría no traer esta llave (por ej. el device manda otros datos en este ciclo)
+            continue
+            
+        try:
+            value = float(raw_value)
+        except (ValueError, TypeError):
+            logger.error("[LISTENER] Valor no numérico para tag '%s' (llave '%s'): %s", tag.name, json_key, raw_value)
+            continue
+
+        quality_str: str = payload.get("quality", "GOOD")
+        quality_code = _quality_to_opc_code(quality_str)
+        edge_timestamp = _parse_edge_timestamp(payload.get("timestamp"), tag.name)
+
+        logger.debug(
+            "[LISTENER] (Externo) tag='%s' value=%.4f quality=%s ts=%s",
+            tag.name, value, quality_str, edge_timestamp.isoformat(),
+        )
+
+        saved = await save_metric(
+            tag_id=tag.id,
+            value=value,
+            quality=quality_code,
+            timestamp=edge_timestamp,
+        )
+        if not saved:
+            logger.error("[LISTENER] Fallo al guardar métrica externa para tag '%s'.", tag.name)
+
+        # RE-PUBLICAR AL FRONTEND:
+        # Ya que el frontend escucha en scada/tags/# y requiere el tag_id para actualizar la UI,
+        # el backend actúa como puente y republica el dato externo ya formateado.
+        from app.core.mqtt_client import mqtt_client
+        clean_payload = json.dumps({
+            "edge_id": "backend_bridge",
+            "tag_id": tag.id,
+            "tag_name": tag.name,
+            "value": value,
+            "quality": quality_str,
+            "timestamp": edge_timestamp.isoformat()
+        })
+        await mqtt_client.publish(f"scada/tags/{tag.name}", clean_payload, qos=0)
+
+        if quality_str.upper() == "GOOD":
+            try:
+                await alarm_engine.evaluate(tag, value)
+            except Exception as exc:
+                logger.error("[LISTENER] Error en alarm_engine para tag '%s': %s", tag.name, exc)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Loop principal del Listener
 # ──────────────────────────────────────────────────────────────────────────────
@@ -256,20 +338,30 @@ async def start_mqtt_listener() -> None:
                 await client.subscribe(TOPIC_ALARMS)
                 logger.info("[LISTENER] ✅ Suscrito a: %s", TOPIC_ALARMS)
 
+                # Suscribirse a los tópicos externos de forma dinámica (los activos al conectar)
+                for ext_topic in _external_topics_cache.keys():
+                    await client.subscribe(ext_topic)
+                    logger.info("[LISTENER] ✅ Suscrito a externo: %s", ext_topic)
+
                 # Bucle de recepción de mensajes.
                 async for message in client.messages:
                     topic = str(message.topic)
                     payload_str = message.payload.decode("utf-8", errors="replace")
 
                     if topic.startswith("scada/tags/"):
-                        # Lanzar el procesamiento como task para no bloquear el loop.
                         asyncio.create_task(
                             _process_tag_message(topic, payload_str),
                             name=f"process_{topic.split('/')[-1]}",
                         )
                     elif topic.startswith("scada/alarms/"):
-                        # Placeholder para manejo futuro de alarmas reportadas por el Edge.
                         logger.debug("[LISTENER] Alarma recibida en %s: %s", topic, payload_str[:80])
+                    else:
+                        # Si no es un tópico nativo, verificar si es uno de nuestros tópicos externos
+                        if topic in _external_topics_cache:
+                            asyncio.create_task(
+                                _process_external_message(topic, payload_str),
+                                name=f"process_ext_{topic.replace('/', '_')}",
+                            )
 
         except aiomqtt.MqttError as exc:
             logger.error("[LISTENER] Error MQTT: %s — reconectando en 5s...", exc)

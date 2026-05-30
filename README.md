@@ -253,6 +253,26 @@ POST /api/v1/screens/
 
 Uses [fastapi-users](https://fastapi-users.github.io/fastapi-users/) with JWT Bearer tokens.
 
+### 🛡️ Gestión de Privilegios Administrativos (ADMIN)
+
+El sistema soporta jerarquía de roles para administrar los Tags y accesos. Para otorgar o revocar privilegios de administrador a un usuario, existen dos métodos principales:
+
+#### Método 1: Vía API REST (Recomendado)
+Un usuario con el flag `is_superuser=True` puede modificar el rol de otro usuario mediante un request a la API:
+```json
+PATCH /users/{user_id}
+{
+  "role": "ADMIN",
+  "is_superuser": true
+}
+```
+*(Nota: Para quitar privilegios, envía `"role": "OPERATOR"` o `"VIEWER"` y `"is_superuser": false`).*
+
+#### Método 2: Vía Base de Datos (pgAdmin / psql)
+Ideal para configuraciones iniciales o si perdiste el acceso del superusuario. Accede a **TimescaleDB** mediante `pgAdmin` (puerto 8080) e inspecciona la tabla `user`. Edita directamente las columnas del registro deseado:
+- `role`: Cámbialo a `ADMIN` (o `OPERATOR`, `VIEWER`).
+- `is_superuser`: Cámbialo a `true` o `false`.
+
 ---
 
 ### 🩺 System
